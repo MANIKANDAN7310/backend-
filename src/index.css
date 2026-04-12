@@ -1,0 +1,46 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-dark: #f8fafc;
+  --bg-card: #ffffff;
+  --bg-sidebar: #ffffff;
+  --primary: #7c3aed;
+  --text-main: #1e293b;
+  --text-dim: #64748b;
+  --border: rgba(0, 0, 0, 0.05);
+  --sidebar-width: 260px;
+  --header-height: 70px;
+}
+
+.dark {
+  --bg-dark: #0f111a;
+  --bg-card: #161a29;
+  --bg-sidebar: #1a1f33;
+  --primary: #7c3aed;
+  --text-main: #e2e8f0;
+  --text-dim: #94a3b8;
+  --border: rgba(255, 255, 255, 0.05);
+}
+
+@layer base {
+  body {
+    @apply bg-[var(--bg-dark)] text-[var(--text-main)] antialiased font-sans transition-colors duration-300;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-[var(--bg-card)] border border-[var(--border)] rounded-xl p-6 transition-all shadow-sm;
+  }
+  .card:hover {
+    border-color: var(--primary);
+  }
+
+  .btn-primary {
+    @apply bg-[var(--primary)] text-white rounded-lg px-6 py-3 font-medium transition-all hover:shadow-[0_0_15px_rgba(124,58,237,0.2)] hover:-translate-y-0.5;
+  }
+}

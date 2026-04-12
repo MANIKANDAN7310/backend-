@@ -1,0 +1,15 @@
+[
+  {
+    "_id": "banner_1",
+    "mainHeading": "Transform Your Brand",
+    "subHeading": "Stunning Custom Designs",
+    "description": "Expert enamel pins, vector art, and embroidery design.",
+    "button1Text": "Start Your Project",
+    "button1Link": "#services",
+    "button2Text": "View Our Work",
+    "button2Link": "#portfolio",
+    "order": 0,
+    "createdAt": "2026-04-11T09:00:00.000Z",
+    "imageUrl": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTwhGCCKhNF2OQSeM3i_HEHkcLVvXI4SDG_Ew&s"
+  }
+]
