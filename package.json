@@ -3,22 +3,29 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "server": "node backend/server.js",
-    "start": "concurrently \"npm run server\" \"npm run dev\" --names \"backend,frontend\" --prefix-colors \"cyan,green\"",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview"
-  },
+      "scripts": {
+      "dev": "vite",
+      "server": "node backend/server.js",
+      "start": "concurrently \"npm run server\" \"npm run dev\" --names \"backend,frontend\" --prefix-colors \"cyan,green\"",
+      "build": "vite build",
+      "lint": "eslint .",
+      "preview": "vite preview",
+      "build:main": "cd main-site && npm run build && cd .. && xcopy /E /I /Y main-site\\dist dist",
+      "build:all": "npm run build && npm run build:main",
+      "deploy": "npm run build:all && firebase deploy --only hosting"
+    },
+  
   "dependencies": {
+    "cloudinary": "^1.41.3",
     "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.577.0",
     "mongoose": "^9.3.0",
     "multer": "^2.1.1",
+    "multer-storage-cloudinary": "^4.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.13.1",
@@ -40,6 +47,7 @@
     "postcss": "^8.5.8",
     "vite": "^6.3.5"
   },
+  
   "description": "This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.",
   "main": "eslint.config.js",
   "keywords": [],

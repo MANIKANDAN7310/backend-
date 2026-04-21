@@ -3,7 +3,7 @@ import { Download, Calendar, ShoppingCart, RefreshCw, AlertCircle, CheckCircle2,
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4999';
+import { API_URL as API } from '../config';
 
 const Orders = () => {
   const [purchases, setPurchases] = useState([]);

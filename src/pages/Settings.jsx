@@ -22,7 +22,9 @@ import {
   AlertTriangle
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4999';
+import { API_URL as API } from '../config';
+import { fetchWithRetry } from '../utils/api';
+
 
 const Settings = () => {
   const [settings, setSettings] = useState({ isStoreEnabled: true, currency: 'USD ($)' });
@@ -56,26 +58,24 @@ const Settings = () => {
   };
 
   const fetchCurrentMonthStats = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      console.log(`[DEBUG] Fetching summary from: ${API}/api/stats/summary`);
-      const res = await fetch(`${API}/api/stats/summary`);
-      const data = await res.json();
-      console.log("[DEBUG] Summary Response:", data);
-      if (data.success) {
+      const data = await fetchWithRetry(`${API}/api/stats/summary`);
+      if (data && data.success) {
         setMonthlyStats({
-          totalClients: data.totalClients,
-          totalOrders: data.totalOrders,
-          customOrders: data.customDesigns,
-          totalRevenue: data.revenue
+          totalClients: data.totalClients || 0,
+          totalOrders: data.totalOrders || 0,
+          customOrders: data.customDesigns || 0,
+          totalRevenue: data.revenue || 0
         });
       }
     } catch (e) {
-      console.error("[DEBUG] Summary Fetch Failed:", e);
+      console.error("Settings Stats Error:", e);
     } finally {
       setLoading(false);
     }
   };
+
 
   const fetchModalData = async (y) => {
     setModalLoading(true);

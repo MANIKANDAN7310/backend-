@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Edit2, Trash2, ExternalLink, Plus, Loader2, AlertCircle, Check, Search, Package, Download, RefreshCw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+import { fetchWithRetry } from '../utils/api';
+
+import { API_URL as API } from '../config';
+
 
 const Products = () => {
   const [products,   setProducts]   = useState([]);
@@ -16,8 +19,7 @@ const Products = () => {
   const fetchProducts = async () => {
     setLoading(true); setError('');
     try {
-      const res  = await fetch(`${API}/api/products`);
-      const data = await res.json();
+      const data = await fetchWithRetry(`${API}/api/products`);
       if (Array.isArray(data)) {
         setProducts(data);
       } else if (data.success) {
@@ -25,8 +27,8 @@ const Products = () => {
       } else {
         setError('Failed to load products');
       }
-    } catch {
-      setError('Cannot connect to server. Is backend running?');
+    } catch (err) {
+      setError(`Cannot connect to server: ${err.message}`);
     } finally { setLoading(false); }
   };
 
@@ -36,15 +38,15 @@ const Products = () => {
     if (!deleteId) return;
     setDeleting(true);
     try {
-      const res  = await fetch(`${API}/api/products/${deleteId}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (res.ok || data.success) {
+      const data = await fetchWithRetry(`${API}/api/products/${deleteId}`, { method: 'DELETE' });
+      if (data.success) {
         setProducts(prev => prev.filter(p => p._id !== deleteId));
         setSuccessMsg('Product deleted!');
         setTimeout(() => setSuccessMsg(''), 3000);
       }
-    } catch { setError('Delete failed.'); }
-    finally  { setDeleting(false); setDeleteId(null); }
+    } catch (err) { 
+      setError(`Delete failed: ${err.message}`); 
+    } finally  { setDeleting(false); setDeleteId(null); }
   };
 
   const filtered = products.filter(p =>
@@ -121,7 +123,7 @@ const Products = () => {
                           className="flex items-center gap-4 cursor-pointer hover:opacity-80 transition-all group"
                         >
                           {product.image ? (
-                            <img src={`${product.image.startsWith('http') ? '' : API + (product.image.startsWith('/') ? '' : '/')}${product.image}`} alt={product.title || 'Product'}
+                            <img src={product.image && product.image.startsWith('http') ? product.image : `${API}/${product.image}`} alt={product.title || 'Product'}
                               className="w-12 h-12 rounded-lg object-cover border border-[var(--border)] group-hover:border-[var(--primary)]/50 transition-all shadow-lg shadow-[var(--primary)]/0 group-hover:shadow-[var(--primary)]/10" />
                           ) : (
                             <div className="w-12 h-12 rounded-lg bg-white/5 border border-[var(--border)] flex items-center justify-center text-slate-500 group-hover:border-[var(--primary)]/50 transition-all">

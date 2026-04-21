@@ -10,7 +10,8 @@ import {
   Image as ImageIcon
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+import { API_URL as API } from '../config';
+import { fetchWithRetry } from '../utils/api';
 
 const HeroBanners = () => {
   const [banners, setBanners] = useState([]);
@@ -45,12 +46,11 @@ const HeroBanners = () => {
   const fetchBanners = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API}/api/banners`);
-      const data = await res.json();
-      if (data.success) {
-        setBanners(data.banners.sort((a, b) => a.order - b.order));
+      const res = await fetchWithRetry(`${API}/api/banners`);
+      if (res.success) {
+        setBanners(res.banners.sort((a, b) => a.order - b.order));
       } else {
-        setError(data.message);
+        setError(res.message);
       }
     } catch (err) {
       setError('Failed to fetch banners.');
@@ -86,7 +86,7 @@ const HeroBanners = () => {
         image: null
       });
       const imgSrc = banner.image
-        ? `${API}/${banner.image}`
+        ? (banner.image && banner.image.startsWith('http') ? banner.image : `${API}/${banner.image}`)
         : banner.imageUrl || null;
       setImagePreview(imgSrc);
     } else {
@@ -116,7 +116,7 @@ const HeroBanners = () => {
     e.preventDefault();
     try {
       const submitData = new FormData();
-      submitData.append('mainHeading', formData.mainHeading);
+      submitData.append('heading', formData.mainHeading);
       submitData.append('subHeading', formData.subHeading || '');
       submitData.append('description', formData.description || '');
       submitData.append('button1Text', formData.button1Text || '');
@@ -136,12 +136,11 @@ const HeroBanners = () => {
 
       const method = editingBanner ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      const data = await fetchWithRetry(url, {
         method,
         body: submitData
       });
 
-      const data = await res.json();
       if (data.success) {
         fetchBanners();
         closeModal();
@@ -243,7 +242,7 @@ const HeroBanners = () => {
         <div className="grid gap-4">
           {banners.map((banner, index) => {
             const displayImg = banner.image
-              ? `${API}/${banner.image}`
+              ? (banner.image && banner.image.startsWith('http') ? banner.image : `${API}/${banner.image}`)
               : banner.imageUrl || null;
 
             return (

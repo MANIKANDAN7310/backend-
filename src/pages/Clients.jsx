@@ -24,7 +24,7 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:4999';
+import { API_URL as API } from '../config';
 
 const Clients = () => {
   const [clients, setClients] = useState([]);
@@ -44,8 +44,8 @@ const Clients = () => {
         fetch(`${API}/api/clients`),
         fetch(`${API}/api/downloads/history`)
       ]);
-      const clientsData = await clientsRes.json();
-      const downloadsData = await downloadsRes.json();
+      const clientsData = clientsRes.ok ? await clientsRes.json() : {};
+      const downloadsData = downloadsRes.ok ? await downloadsRes.json() : {};
 
       if (clientsData.success) {
         setClients(clientsData.clients);

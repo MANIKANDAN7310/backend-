@@ -18,7 +18,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+import { API_URL as API } from '../config';
 
 const StatCard = ({ title, value, icon: Icon, color }) => (
   <div className="card group hover:scale-[1.02] transition-all cursor-default relative overflow-hidden">

@@ -1,0 +1,553 @@
+.custom-design-container {
+    color: #fff;
+    font-family: 'Inter', sans-serif;
+    padding: 1rem;
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.cd-title {
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: #9f7aea;
+    margin-bottom: 0.5rem;
+}
+
+.cd-subtitle {
+    color: #a0aec0;
+    font-size: 1rem;
+    margin-bottom: 2rem;
+}
+
+.cd-card {
+    background-color: #0F0F1A;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 2.5rem;
+}
+
+/* NEW GRID LAYOUT */
+.cd-main-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 2fr;
+    gap: 2.5rem;
+    margin-bottom: 2.5rem;
+}
+
+.cd-left-col {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.cd-right-col {
+    display: block;
+}
+
+.cd-fields-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+/* Make categories and file name span differently if needed, 
+   but 2-col grid works well for pairs */
+.cd-fields-grid .cd-full-width {
+    grid-column: 1 / -1;
+}
+
+/* UPLOAD BOX STYLING */
+.cd-upload-box {
+    display: flex;
+    flex-direction: column;
+}
+
+.cd-upload-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: #9f7aea;
+}
+
+.cd-dropzone {
+    border: 1px dashed rgba(255, 255, 255, 0.3);
+    border-radius: 12px;
+    padding: 1.5rem;
+    height: 180px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(255, 255, 255, 0.03);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.cd-dropzone:hover:not(.has-image) {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-color: #7c3aed;
+}
+
+.cd-dropzone.has-image {
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: default;
+}
+
+.cd-preview-container {
+    width: 100%;
+    height: 100%;
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #000;
+}
+
+.cd-preview-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.cd-preview-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 0.75rem;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.cd-preview-container:hover .cd-preview-overlay {
+    opacity: 1;
+}
+
+.cd-preview-btn {
+    padding: 0.4rem 1.2rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: background 0.2s;
+}
+
+.cd-preview-btn.change {
+    background-color: #7c3aed;
+    color: #9f7aea;
+}
+
+.cd-preview-btn.change:hover {
+    background-color: #6b46c1;
+}
+
+.cd-preview-btn.remove {
+    background-color: transparent;
+    border: 1px solid #fc8181;
+    color: #fc8181;
+}
+
+.cd-preview-btn.remove:hover {
+    background-color: rgba(252, 129, 129, 0.1);
+}
+
+.cd-dropzone-icon {
+    color: #7c3aed;
+    margin-bottom: 0.5rem;
+}
+
+.cd-plus {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #9f7aea;
+    margin-bottom: 0.5rem;
+}
+
+.cd-dropzone-text {
+    font-size: 0.75rem;
+    color: #718096;
+}
+
+/* REFERENCE FILE STYLING */
+.cd-ref-box {
+    margin-top: 0.5rem;
+}
+
+.cd-dropzone-small {
+    height: 60px;
+    padding: 0;
+    flex-direction: row;
+}
+
+.cd-small-upload-content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: #9f7aea;
+    font-size: 0.9rem;
+}
+
+.cd-dropzone-small:hover .cd-small-upload-content {
+    color: #7c3aed;
+}
+
+.cd-ref-list {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.cd-ref-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.cd-ref-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    overflow: hidden;
+}
+
+.cd-ref-name {
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+.cd-ref-size {
+    font-size: 0.75rem;
+    color: #718096;
+}
+
+.cd-ref-delete {
+    padding: 0.2rem;
+}
+
+
+/* INPUT FIELD STYLES */
+.cd-input-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.cd-input-group label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: #9f7aea;
+}
+
+.cd-select-wrapper {
+    position: relative;
+}
+
+.cd-input-group select,
+.cd-input-group input,
+.cd-email-box input {
+    width: 100%;
+    background-color: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    padding: 0.8rem 1rem;
+    border-radius: 6px;
+    outline: none;
+    font-family: inherit;
+    font-size: 0.95rem;
+    transition: all 0.2s;
+    background-color: rgba(0, 0, 0, 0.2);
+}
+
+.cd-select-wrapper select {
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    background-size: 1em;
+}
+
+.cd-input-group select option {
+    background-color: #1a1a2e;
+    color: #fff;
+}
+
+.cd-input-group input:focus,
+.cd-email-box input:focus,
+.cd-requirement-box textarea:focus,
+.cd-input-group select:focus {
+    border-color: #7c3aed;
+    background-color: rgba(0, 0, 0, 0.4);
+    box-shadow: 0 0 0 1px #7c3aed;
+}
+
+.cd-input-group input::placeholder {
+    color: #4a5568;
+}
+
+/* FILE TABLE */
+.cd-files-table {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 2.5rem;
+}
+
+.cd-table-header,
+.cd-table-row {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    padding: 1rem 1.5rem;
+}
+
+.cd-table-header {
+    background-color: rgba(255, 255, 255, 0.02);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #fff;
+}
+
+.cd-table-row {
+    background-color: transparent;
+    align-items: center;
+    font-size: 0.95rem;
+    color: #cbd5e0;
+}
+
+.cd-col.name {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.cd-col.colors {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.cd-row-actions {
+    display: flex;
+    gap: 1rem;
+}
+
+.cd-icon-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: transform 0.2s, opacity 0.2s;
+}
+
+.cd-icon-btn:hover {
+    transform: scale(1.1);
+    opacity: 0.8;
+}
+
+.cd-icon-btn.edit-btn {
+    color: #9f7aea;
+}
+
+.cd-icon-btn.delete-btn {
+    color: #f56565;
+}
+
+
+/* BOTTOM SECTIONS */
+.cd-requirement-box {
+    margin-bottom: 2.5rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.cd-requirement-box label {
+    color: #9f7aea;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+}
+
+.cd-requirement-box textarea {
+    background-color: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    padding: 1.25rem;
+    border-radius: 8px;
+    outline: none;
+    font-family: inherit;
+    min-height: 140px;
+    resize: vertical;
+    font-size: 0.95rem;
+    transition: all 0.2s;
+}
+
+.cd-requirement-box textarea::placeholder {
+    color: #4a5568;
+}
+
+.cd-email-box {
+    margin-bottom: 2.5rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.cd-email-box label {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #9f7aea;
+    margin-bottom: 0.75rem;
+}
+
+
+/* SUBMIT BUTTON & STATUS */
+.cd-submit-container {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.cd-submit-btn {
+    background-color: #7c3aed;
+    color: #fff;
+    padding: 0.8rem 3rem;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 1.05rem;
+    cursor: pointer;
+    border: none;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+.cd-submit-btn:hover {
+    background-color: #6d28d9;
+}
+
+.cd-submit-btn:active {
+    transform: scale(0.98);
+}
+
+.cd-submit-btn:disabled {
+    background-color: #4c1d95;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.cd-status {
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    font-weight: 500;
+}
+
+.cd-status-error {
+    background-color: rgba(245, 101, 101, 0.1);
+    color: #fc8181;
+    border: 1px solid rgba(245, 101, 101, 0.2);
+}
+
+.cd-status-success {
+    background-color: rgba(72, 187, 120, 0.1);
+    color: #68d391;
+    border: 1px solid rgba(72, 187, 120, 0.2);
+}
+
+.cd-status-loading {
+    background-color: rgba(66, 153, 225, 0.1);
+    color: #ede463;
+    border: 1px solid rgba(66, 153, 225, 0.2);
+}
+
+/* RESPONSIVE DESIGN */
+@media (max-width: 768px) {
+    .cd-main-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .cd-fields-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .cd-table-header,
+    .cd-table-row {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+
+    .cd-col.colors {
+        justify-content: flex-start;
+        gap: 1.5rem;
+    }
+
+    .cd-card {
+        padding: 1.5rem;
+    }
+
+    .cd-submit-container {
+        justify-content: center;
+    }
+
+    .cd-submit-btn {
+        width: 100%;
+        padding: 0.9rem;
+    }
+
+    .cd-title {
+        font-size: 1.6rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .custom-design-container {
+        padding: 0.5rem;
+    }
+
+    .cd-card {
+        padding: 1rem;
+    }
+
+    .cd-title {
+        font-size: 1.4rem;
+    }
+
+    .cd-subtitle {
+        font-size: 0.9rem;
+    }
+
+    .cd-dropzone {
+        height: 150px;
+    }
+
+    .cd-input-group select,
+    .cd-input-group input,
+    .cd-email-box input {
+        padding: 0.7rem 0.8rem;
+        font-size: 0.9rem;
+    }
+
+    .cd-requirement-box textarea {
+        min-height: 100px;
+        padding: 1rem;
+    }
+}

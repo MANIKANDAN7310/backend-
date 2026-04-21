@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft, User, Package, CreditCard, Clock, Download, ExternalLink, AlertCircle } from 'lucide-react';
 import { mockOrders } from '../utils/mockData';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+import { API_URL as API } from '../config';
 
 const OrderDetails = () => {
   const { id } = useParams();
@@ -25,60 +25,66 @@ const OrderDetails = () => {
           return;
         }
 
-        // 2. Try fetching as custom design order
-        let res = await fetch(`${API}/api/custom-design/${id}`);
-        let data = await res.json();
-        if (data.success) {
-          const raw = data.order;
-          // Map MongoDB schema to what the UI expects
-          setOrder({
-            id: raw._id,
-            clientName: raw.email ? raw.email.split('@')[0].toUpperCase() : 'CLIENT',
-            email: raw.email || 'N/A',
-            productName: raw.category || 'Custom Design',
-            price: 0, // Custom designs might not have a price in this schema
-            date: new Date(raw.createdAt).toLocaleDateString(),
-            time: new Date(raw.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            status: raw.status || 'Pending',
-            purchasedFiles: raw.designFile ? [raw.designFile.split('/').pop()] : [],
-            designFile: raw.designFile,
-            paymentStatus: raw.status === 'Completed' ? 'Paid' : 'Processing',
-            timeline: [
-              { status: 'Request Received', date: new Date(raw.createdAt).toLocaleString() },
-              ...(raw.status && raw.status !== 'Pending' ? [{ status: raw.status, date: 'Updated Recently' }] : [])
-            ],
-            isCustomDesign: true,
-            raw: raw
-          });
-          setLoading(false);
-          return;
+        // 2. Try fetching from orders
+        let res = await fetch(`${API}/api/orders`);
+        if (res.ok) {
+          let data = await res.json();
+          if (data.success) {
+            const raw = data.orders?.find(o => o._id === id);
+            if (raw) {
+              // Map MongoDB schema to what the UI expects
+              setOrder({
+                id: raw._id,
+                clientName: raw.email ? raw.email.split('@')[0].toUpperCase() : 'CLIENT',
+                email: raw.email || 'N/A',
+                productName: raw.category || 'Custom Design',
+                price: 0, // Custom designs might not have a price in this schema
+                date: new Date(raw.createdAt).toLocaleDateString(),
+                time: new Date(raw.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                status: raw.status || 'Pending',
+                purchasedFiles: raw.designFile ? [raw.designFile.split('/').pop()] : [],
+                designFile: raw.designFile,
+                paymentStatus: raw.status === 'Completed' ? 'Paid' : 'Processing',
+                timeline: [
+                  { status: 'Request Received', date: new Date(raw.createdAt).toLocaleString() },
+                  ...(raw.status && raw.status !== 'Pending' ? [{ status: raw.status, date: 'Updated Recently' }] : [])
+                ],
+                isCustomDesign: true,
+                raw: raw
+              });
+              setLoading(false);
+              return;
+            }
+          }
         }
 
         // 3. Try fetching as product download order
         res = await fetch(`${API}/api/downloads/${id}`);
-        data = await res.json();
-        if (data.success) {
-          const raw = data.order;
-          setOrder({
-            id: raw._id,
-            clientName: 'Customer',
-            email: 'N/A',
-            productName: raw.productName,
-            price: raw.price || 0,
-            date: new Date(raw.date).toLocaleDateString(),
-            time: new Date(raw.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            status: 'Completed',
-            purchasedFiles: raw.fileUrl ? [raw.fileUrl.split('/').pop()] : [],
-            fileUrl: raw.fileUrl,
-            paymentStatus: 'Paid',
-            timeline: [
-              { status: 'Purchased', date: new Date(raw.date).toLocaleString() }
-            ],
-            isProductDownload: true,
-            raw: raw
-          });
-          setLoading(false);
-          return;
+        if (res.ok) {
+          let data = await res.json();
+          if (data.success) {
+            const raw = data.order;
+            setOrder({
+              id: raw._id,
+              clientName: 'Customer',
+              email: 'N/A',
+              productName: raw.productName,
+              price: raw.price || 0,
+              date: new Date(raw.date).toLocaleDateString(),
+              time: new Date(raw.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              status: 'Completed',
+              purchasedFiles: raw.fileUrl ? [raw.fileUrl.split('/').pop()] : [],
+              fileUrl: raw.fileUrl,
+              paymentStatus: 'Paid',
+              timeline: [
+                { status: 'Purchased', date: new Date(raw.date).toLocaleString() }
+              ],
+              isProductDownload: true,
+              raw: raw
+            });
+            setLoading(false);
+            return;
+          }
         }
 
         setError("Order not found");
@@ -107,7 +113,7 @@ const OrderDetails = () => {
       <div className="flex flex-col items-center justify-center h-[60vh] text-center">
         <AlertCircle size={48} className="text-rose-500 mb-4" />
         <h2 className="text-2xl font-bold mb-4">{error || "Order Not Found"}</h2>
-        <button 
+        <button
           onClick={() => navigate('/orders')}
           className="px-6 py-2 bg-[var(--primary)] text-white rounded-xl font-bold hover:bg-[var(--primary)]/90 transition-all"
         >
@@ -119,7 +125,7 @@ const OrderDetails = () => {
 
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-7xl mx-auto">
-      <button 
+      <button
         onClick={() => navigate('/orders')}
         className="flex items-center gap-2 text-[var(--text-dim)] hover:text-[var(--text-main)] mb-6 transition-colors"
       >
@@ -137,7 +143,7 @@ const OrderDetails = () => {
           </div>
           <p className="text-[var(--text-dim)]">Placed on {order.date} at {order.time}</p>
         </div>
-        
+
         <div className="flex items-center gap-3">
           <button className="px-4 py-2 border border-[var(--border)] rounded-xl text-sm font-medium hover:bg-white/5 transition-all">
             Print Invoice
@@ -231,7 +237,7 @@ const OrderDetails = () => {
               </div>
               <h3 className="text-lg font-bold">Client History</h3>
             </div>
-            
+
             <div className="space-y-6">
               <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-500/5 border border-[var(--border)]">
                 <div className="w-12 h-12 rounded-full bg-[var(--primary)]/10 text-[var(--primary)] flex items-center justify-center text-xl font-bold">
@@ -285,7 +291,7 @@ const OrderDetails = () => {
               </div>
               <h3 className="text-lg font-bold">Payment Status</h3>
             </div>
-            
+
             <div className={`p-4 rounded-xl border mb-6 ${order.paymentStatus === 'Paid' ? 'bg-emerald-500/5 border-emerald-500/10' : 'bg-amber-500/5 border-amber-500/10'}`}>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-[var(--text-dim)] uppercase">Status</span>

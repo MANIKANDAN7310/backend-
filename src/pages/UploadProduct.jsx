@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Check, ArrowLeft, Image as ImageIcon, FileArchive, Plus, Loader2, AlertCircle } from 'lucide-react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+import { API_URL as API } from '../config';
+
 
 const categories = [
   'Enamel Pin', 'Medals', 'Ornament Design', 'Keychain Design', 'Coins Design', 'Embroidery Design'
@@ -46,10 +47,10 @@ const UploadProduct = () => {
             price: p.price, originalPrice: p.originalPrice || '',
             tags: p.tags || '', description: p.description || '',
           });
-          if (p.image) setImagePreview(`${API}/${p.image}`);
+          if (p.image) setImagePreview(p.image.startsWith('http') ? p.image : `${API}/${p.image}`);
           if (p.file) setFileName(p.file.split('/').pop());
           if (p.extraImages?.length) {
-            setExtraPreviews([0, 1, 2].map(i => p.extraImages[i] ? `${API}/${p.extraImages[i]}` : ''));
+            setExtraPreviews([0, 1, 2].map(i => p.extraImages[i] ? (p.extraImages[i].startsWith('http') ? p.extraImages[i] : `${API}/${p.extraImages[i]}`) : ''));
           }
         }
       } catch { setError('Could not load product.'); }

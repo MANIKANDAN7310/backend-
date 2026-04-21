@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Palette, Search, ChevronRight, Trash2, RefreshCw, X, Download, Image } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+import { API_URL as API } from '../config';
 
 const CustomOrders = () => {
   const [orders, setOrders] = useState([]);
@@ -13,7 +13,7 @@ const CustomOrders = () => {
   const fetchOrders = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/custom-design`);
+      const res = await fetch(`${API}/api/orders/custom-designs`);
       const data = await res.json();
       if (data.success) setOrders(data.orders);
     } catch (e) {
@@ -27,7 +27,7 @@ const CustomOrders = () => {
 
   const handleDelete = async (id) => {
     try {
-      const res = await fetch(`${API}/api/custom-design/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API}/api/orders/${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         setOrders(prev => prev.filter(o => o._id !== id));
@@ -39,7 +39,7 @@ const CustomOrders = () => {
 
   const handleStatusUpdate = async (id, newStatus) => {
     try {
-      const res = await fetch(`${API}/api/custom-design/${id}/status`, {
+      const res = await fetch(`${API}/api/orders/${id}/status`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
@@ -54,11 +54,15 @@ const CustomOrders = () => {
     } catch (e) { console.error(e); }
   };
 
-  const filtered = orders.filter(o =>
-    o.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    o.category?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    o.fileName?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filtered = orders.filter(o => {
+    if (!searchTerm) return true;
+    const s = searchTerm.toLowerCase();
+    return (
+      (o.email?.toLowerCase() || '').includes(s) ||
+      (o.category?.toLowerCase() || '').includes(s) ||
+      (o.fileName?.toLowerCase() || '').includes(s)
+    );
+  });
 
   const formatDate = (d) => {
     if (!d) return 'N/A';
@@ -149,12 +153,11 @@ const CustomOrders = () => {
                   className={`p-5 cursor-pointer transition-all hover:bg-slate-500/5 relative ${selectedOrder?._id === order._id ? 'bg-[var(--primary)]/[0.03] before:content-[""] before:absolute before:left-0 before:top-0 before:bottom-0 before:w-1 before:bg-[var(--primary)]' : ''}`}
                 >
                   <div className="flex items-start gap-3">
-                    {order.designFile ? (
+                    {order.customDesignUrl ? (
                       <img
-                        src={`${API}/${order.designFile}`}
+                        src={order.customDesignUrl}
                         alt="design"
                         className="w-12 h-12 rounded-lg object-cover border border-[var(--border)] flex-shrink-0"
-                        onError={(e) => { e.target.style.display = 'none'; }}
                       />
                     ) : (
                       <div className="w-12 h-12 rounded-lg bg-[var(--primary)]/10 border border-[var(--border)] flex items-center justify-center flex-shrink-0">
@@ -228,18 +231,18 @@ const CustomOrders = () => {
                 <div className="p-6 overflow-y-auto flex-1 space-y-6">
 
                   {/* Design Image */}
-                  {selectedOrder.designFile && (
+                  {selectedOrder.customDesignUrl && (
                     <div>
                       <p className="text-xs text-[var(--text-dim)] mb-2 font-semibold uppercase tracking-wider">Design File</p>
                       <div className="relative group rounded-xl overflow-hidden border border-[var(--border)]">
                         <img
-                          src={`${API}/${selectedOrder.designFile}`}
+                          src={selectedOrder.customDesignUrl}
                           alt="Design"
                           className="w-full max-h-64 object-contain bg-white/5"
                         />
                         <a
-                          href={`${API}/${selectedOrder.designFile}`}
-                          download={selectedOrder.designFileOriginalName || 'design'}
+                          href={selectedOrder.customDesignUrl}
+                          download={selectedOrder.fileName || 'design'}
                           target="_blank"
                           rel="noreferrer"
                           className="absolute top-3 right-3 p-2 bg-black/60 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
@@ -247,7 +250,6 @@ const CustomOrders = () => {
                           <Download size={16} />
                         </a>
                       </div>
-                      <p className="text-xs text-[var(--text-dim)] mt-1">{selectedOrder.designFileOriginalName}</p>
                     </div>
                   )}
 
@@ -297,11 +299,10 @@ const CustomOrders = () => {
                           <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-[var(--border)]">
                             <div className="flex items-center gap-3 min-w-0">
                               <Image size={16} className="text-[var(--text-dim)] flex-shrink-0" />
-                              <span className="text-sm truncate">{rf.originalName}</span>
+                              <span className="text-sm truncate">Reference {i + 1}</span>
                             </div>
                             <a
-                              href={`${API}/${rf.path}`}
-                              download={rf.originalName}
+                              href={rf}
                               target="_blank"
                               rel="noreferrer"
                               className="p-2 text-[var(--text-dim)] hover:text-[var(--primary)] transition-colors flex-shrink-0"

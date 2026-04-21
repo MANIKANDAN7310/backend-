@@ -3,7 +3,8 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { Package, Download, Mail, ShoppingCart, ArrowUpRight, Users, ChevronRight, Clock, RefreshCw, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+import { fetchWithRetry } from '../utils/api';
+import { API_URL as API } from '../config';
 
 const SummaryCard = ({ title, value, icon: Icon, color, prefix = "", suffix = "", pulse = false }) => (
   <div className="card group hover:scale-[1.02] transition-all cursor-default relative overflow-hidden">
@@ -36,9 +37,9 @@ const SummaryCard = ({ title, value, icon: Icon, color, prefix = "", suffix = ""
 
 const DashboardHome = () => {
   const navigate = useNavigate();
-  const [stats, setStats] = useState({ 
-    products: 0, 
-    totalDownloads: 0, 
+  const [stats, setStats] = useState({
+    products: 0,
+    totalDownloads: 0,
     customOrders: 0,
     totalClients: 0,
     totalRevenue: 0
@@ -48,59 +49,84 @@ const DashboardHome = () => {
   const [chartData, setChartData] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const [error, setError] = useState(null);
+
   const fetchAll = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const [prodRes, ordRes, statRes, clientRes] = await Promise.allSettled([
-        fetch(`${API}/api/products`),
-        fetch(`${API}/api/custom-design`),
-        fetch(`${API}/api/stats/totals`),
-        fetch(`${API}/api/clients`)
+      const [prodRes, ordRes, purchRes, clientRes] = await Promise.allSettled([
+        fetchWithRetry(`${API}/api/products`),
+        fetchWithRetry(`${API}/api/orders`),
+        fetchWithRetry(`${API}/api/purchases`),
+        fetchWithRetry(`${API}/api/clients`)
       ]);
 
       let products = [];
-      if (prodRes.status === 'fulfilled' && prodRes.value.ok) {
-        const data = await prodRes.value.json();
-        products = data.success ? data.products : [];
+      if (prodRes.status === 'fulfilled' && prodRes.value) {
+        const data = prodRes.value;
+        products = data.success ? (Array.isArray(data.products) ? data.products : []) : (Array.isArray(data) ? data : []);
+      } else if (prodRes.status === 'rejected') {
+        console.warn("Products failed:", prodRes.reason);
       }
 
       let customOrders = [];
-      if (ordRes.status === 'fulfilled' && ordRes.value.ok) {
-        const data = await ordRes.value.json();
-        customOrders = data.success ? data.orders : [];
+      if (ordRes.status === 'fulfilled' && ordRes.value) {
+        const data = ordRes.value;
+        customOrders = data.success ? (Array.isArray(data.orders) ? data.orders : []) : (Array.isArray(data) ? data : []);
+      }
+
+      let purchases = [];
+      if (purchRes.status === 'fulfilled' && purchRes.value) {
+        const data = purchRes.value;
+        purchases = data.success ? (Array.isArray(data.purchases) ? data.purchases : []) : (Array.isArray(data) ? data : []);
       }
 
       let clients = [];
-      if (clientRes.status === 'fulfilled' && clientRes.value.ok) {
-        const data = await clientRes.value.json();
-        clients = data.success ? data.clients : [];
+      if (clientRes.status === 'fulfilled' && clientRes.value) {
+        const data = clientRes.value;
+        clients = data.success ? (Array.isArray(data.clients) ? data.clients : []) : (Array.isArray(data) ? data : []);
       }
 
-      let apiStats = { totalDownloads: 0, customOrdersCount: 0, totalClients: 0, totalRevenue: 0 };
-      if (statRes.status === 'fulfilled' && statRes.value.ok) {
-        const data = await statRes.value.json();
-        if (data.success) apiStats = data;
+      // Check if we got any data at all
+      if (products.length === 0 && customOrders.length === 0 && purchases.length === 0 && clients.length === 0) {
+          // If all are empty, maybe the backend is returning the wrong format (like the stats summary)
+          const someRes = [prodRes, ordRes, purchRes, clientRes].find(r => r.status === 'fulfilled');
+          if (someRes && someRes.value && someRes.value.totalClients !== undefined) {
+              // This is the stats summary JSON!
+              const d = someRes.value;
+              setStats({
+                products: 0,
+                totalDownloads: d.totalOrders || 0,
+                customOrders: d.customDesigns || 0,
+                totalClients: d.totalClients || 0,
+                totalRevenue: d.revenue || 0,
+              });
+              setLoading(false);
+              return;
+          }
       }
+
+      // Compute accurate stats from real data
+      const totalRevenue = purchases.reduce((sum, p) => sum + (Number(p.totalAmount || p.amount) || 0), 0);
+      const totalDownloads = products.reduce((sum, p) => sum + (Number(p.downloads) || 0), 0);
 
       setStats({
         products: products.length,
-        totalDownloads: apiStats.totalDownloads || products.reduce((sum, p) => sum + (Number(p.downloads) || 0), 0),
-        customOrders: apiStats.customOrdersCount || customOrders.length,
-        totalClients: apiStats.totalClients || clients.length,
-        totalRevenue: apiStats.totalRevenue || 0
+        totalDownloads,
+        customOrders: customOrders.length,
+        totalClients: clients.length,
+        totalRevenue,
       });
 
       setRecentCustomOrders(customOrders.slice(0, 5));
 
-      // Fetch recent purchases via client detail for simplicity or just keep it as is
-      // For now, let's just use the top downloads like before but call it "Product Popularity"
       const topDownloaded = [...products]
         .filter(p => p.downloads > 0)
         .sort((a, b) => b.downloads - a.downloads)
         .slice(0, 5);
       setRecentPurchases(topDownloaded);
 
-      // Chart data from custom orders
       const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const monthMap = {};
       customOrders.forEach(o => {
@@ -117,10 +143,12 @@ const DashboardHome = () => {
 
     } catch (e) {
       console.error("Dashboard Fetch Error:", e);
+      setError("Failed to sync with server. Check connection.");
     } finally {
       setLoading(false);
     }
   };
+
 
   useEffect(() => {
     fetchAll();
@@ -142,6 +170,13 @@ const DashboardHome = () => {
           <h2 className="text-4xl font-black mb-2 bg-gradient-to-r from-[var(--text-main)] to-[var(--text-dim)] bg-clip-text text-transparent uppercase tracking-tight">Overview</h2>
           <p className="text-[var(--text-dim)] font-medium">Live data from your store and customer database.</p>
         </div>
+        {error && (
+          <div className="flex items-center gap-3 px-4 py-2 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-500 text-xs font-bold animate-bounce">
+            <AlertCircle size={16} />
+            <span>{error}</span>
+          </div>
+        )}
+
         <div className="flex items-center gap-3">
           <button onClick={fetchAll} className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-sm font-bold shadow-lg hover:bg-white/5 transition-all active:scale-95">
             <RefreshCw size={16} className={`text-[var(--primary)] ${loading ? 'animate-spin' : ''}`} />
@@ -195,7 +230,7 @@ const DashboardHome = () => {
                         <td className="px-8 py-5">
                           <div className="flex items-center gap-4">
                             <div className="w-10 h-10 rounded-xl bg-violet-600/10 text-violet-400 flex items-center justify-center text-xs font-black border border-violet-500/20 group-hover:scale-110 transition-transform shadow-lg shadow-violet-600/10">
-                                {order.email?.charAt(0).toUpperCase()}
+                              {order.email?.charAt(0).toUpperCase()}
                             </div>
                             <p className="text-sm font-bold text-white group-hover:text-violet-400 transition-colors">{order.email}</p>
                           </div>
@@ -216,12 +251,12 @@ const DashboardHome = () => {
 
           {/* Chart */}
           <div className="card bg-slate-900 border border-slate-800 rounded-[2rem] p-8 shadow-2xl relative overflow-hidden">
-             <div className="absolute -right-10 -top-10 w-40 h-40 bg-violet-500/10 rounded-full blur-3xl"></div>
+            <div className="absolute -right-10 -top-10 w-40 h-40 bg-violet-500/10 rounded-full blur-3xl"></div>
             <div className="flex items-center justify-between mb-10 relative z-10">
               <h3 className="text-lg font-bold text-white uppercase tracking-wider">Order Volume Analysis</h3>
               <div className="flex items-center gap-2 px-3 py-1 bg-violet-500/10 rounded-full border border-violet-500/20">
-                 <div className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse"></div>
-                 <span className="text-[10px] font-black text-violet-400 uppercase tracking-widest">Real-time</span>
+                <div className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse"></div>
+                <span className="text-[10px] font-black text-violet-400 uppercase tracking-widest">Real-time</span>
               </div>
             </div>
             <div className="h-[280px] w-full relative z-10">
@@ -294,8 +329,8 @@ const DashboardHome = () => {
             </div>
           )}
 
-          <button 
-            onClick={() => navigate('/products')} 
+          <button
+            onClick={() => navigate('/products')}
             className="w-full mt-10 py-4 rounded-2xl bg-white/[0.02] border border-white/[0.05] text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-white hover:bg-violet-600 hover:border-violet-500 transition-all shadow-xl active:scale-95"
           >
             Insights & Analytics

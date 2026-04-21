@@ -1,27 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Search, ChevronRight, Trash2, RefreshCw, X, MessageSquare } from 'lucide-react';
+import { Mail, Search, ChevronRight, Trash2, RefreshCw, X, MessageSquare, AlertCircle } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+import { API_URL as API } from '../config';
+import { fetchWithRetry } from '../utils/api';
+
 
 const ContactMails = () => {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
 
+
   const fetchMessages = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const res = await fetch(`${API}/api/contact`);
-      const data = await res.json();
-      if (data.success) setMessages(data.messages);
+      const data = await fetchWithRetry(`${API}/api/contact`);
+      if (data.success) setMessages(data.messages || data.contacts || []);
+      else setError('Could not load messages. The server returned an error.');
     } catch (e) {
       console.error(e);
+      setError('Failed to connect to the server. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
 
   useEffect(() => { fetchMessages(); }, []);
 
@@ -37,11 +44,16 @@ const ContactMails = () => {
     } catch (e) { console.error(e); }
   };
 
-  const filtered = messages.filter(m =>
-    m.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.service?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filtered = messages.filter(m => {
+    if (!searchTerm) return true;
+    const s = searchTerm.toLowerCase();
+    return (
+      (m.name?.toLowerCase() || '').includes(s) ||
+      (m.email?.toLowerCase() || '').includes(s) ||
+      (m.service?.toLowerCase() || '').includes(s)
+    );
+  });
+
 
   const formatDate = (d) => {
     if (!d) return 'N/A';
@@ -100,8 +112,24 @@ const ContactMails = () => {
         </div>
       )}
 
+      {/* Error */}
+      {!loading && error && (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center p-10">
+            <div className="w-20 h-20 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-6 border border-red-500/20">
+              <AlertCircle size={40} className="text-red-400" />
+            </div>
+            <h3 className="text-xl font-bold mb-2">Failed to Load Messages</h3>
+            <p className="text-[var(--text-dim)] max-w-xs mx-auto mb-6">{error}</p>
+            <button onClick={fetchMessages} className="px-6 py-3 bg-[var(--primary)] text-white rounded-xl font-bold text-sm hover:opacity-90 transition-all">
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Empty */}
-      {!loading && messages.length === 0 && (
+      {!loading && !error && messages.length === 0 && (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center p-10">
             <div className="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center mx-auto mb-6 border border-[var(--border)]">
