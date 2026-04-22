@@ -201,10 +201,10 @@ const UploadProduct = () => {
               ) : (
                 <>
                   <p className="font-semibold mb-1">Click to upload or drag and drop</p>
-                  <p className="text-xs text-[var(--text-dim)]">ZIP, PDF or SVG (MAX. 50MB)</p>
+                  <p className="text-xs text-[var(--text-dim)]">ZIP (MAX. 100MB)</p>
                 </>
               )}
-              <input type="file" accept=".zip,.pdf,.svg" className="hidden" onChange={handleFile} />
+              <input type="file" accept=".zip" className="hidden" onChange={handleFile} />
             </label>
           </div>
         </div>

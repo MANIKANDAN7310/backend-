@@ -6,14 +6,37 @@ import { storage } from '../config/cloudinary.js';
 import Product from '../models/Product.js';
 
 const router = express.Router();
-const upload = multer({ storage });
+const upload = multer({ 
+  storage,
+  limits: {
+    fileSize: 100 * 1024 * 1024 // 100MB limit for all files
+  },
+  fileFilter: (req, file, cb) => {
+    // If the field is 'file' (the digital download), strictly require .zip
+    if (file.fieldname === 'file') {
+      if (!file.originalname.match(/\.zip$/i)) {
+        return cb(new Error('Only .zip files are allowed for the digital file download.'));
+      }
+    }
+    cb(null, true);
+  }
+});
 
 // Create Product
-router.post('/', upload.fields([
-  { name: 'image', maxCount: 1 },
-  { name: 'extraImages', maxCount: 3 },
-  { name: 'file', maxCount: 1 }
-]), async (req, res) => {
+router.post('/', (req, res, next) => {
+  upload.fields([
+    { name: 'image', maxCount: 1 },
+    { name: 'extraImages', maxCount: 3 },
+    { name: 'file', maxCount: 1 }
+  ])(req, res, function (err) {
+    if (err) {
+      // Multer error (e.g., file size, type)
+      console.error('Multer upload error:', err);
+      return res.status(400).json({ success: false, message: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
   try {
     const { title, description, price, originalPrice, category, tags } = req.body;
     
