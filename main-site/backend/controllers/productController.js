@@ -21,15 +21,14 @@ export const getProductById = async (req, res) => {
 
 export const createProduct = async (req, res) => {
     try {
+        console.log("Create product request body:", req.body);
+        console.log("Create product files:", req.files ? Object.keys(req.files) : 'no files');
+
         const { title, category, price, originalPrice, description, tags } = req.body;
         
-        // Multer with Cloudinary storage will provide the URL in req.file.path or req.files
         const imagePath = req.files?.image?.[0] ? req.files.image[0].path : "";
         const extraImagePaths = (req.files?.extraImages || []).map(f => f.path);
-        
-        // Note: For files (like PDFs), you might still want local storage or another Cloudinary folder
-        // The user said "Do NOT store images locally". They didn't mention other files.
-        // I'll assume all images go to Cloudinary.
+        const filePath = req.files?.file?.[0] ? req.files.file[0].path : "";
         
         const product = new Product({ 
             title, 
@@ -39,26 +38,36 @@ export const createProduct = async (req, res) => {
             description, 
             tags, 
             image: imagePath, 
-            extraImages: extraImagePaths 
+            extraImages: extraImagePaths,
+            file: filePath
         });
         
         await product.save();
+        console.log("Product created successfully:", product._id);
         res.status(201).json({ success: true, product });
     } catch (err) {
+        console.error("Error creating product:", err);
         res.status(500).json({ success: false, message: err.message });
     }
 };
 
 export const updateProduct = async (req, res) => {
     try {
+        console.log("Update product request body:", req.body);
+        console.log("Update product files:", req.files ? Object.keys(req.files) : 'no files');
+
         const updates = { ...req.body };
         if (req.files?.image?.[0]) updates.image = req.files.image[0].path;
         if (req.files?.extraImages) updates.extraImages = req.files.extraImages.map(f => f.path);
+        if (req.files?.file?.[0]) updates.file = req.files.file[0].path;
         
         const product = await Product.findByIdAndUpdate(req.params.id, updates, { new: true });
         if (!product) return res.status(404).json({ success: false, message: "Not found" });
+        
+        console.log("Product updated successfully:", product._id);
         res.json({ success: true, product });
     } catch (err) {
+        console.error("Error updating product:", err);
         res.status(500).json({ success: false, message: err.message });
     }
 };

@@ -10,7 +10,7 @@
     "trailingSlash": false,
     "rewrites": [
       {
-        "source": "/dashboard/**",
+        "source": "/dashboard**",
         "destination": "/dashboard/index.html"
       },
       {

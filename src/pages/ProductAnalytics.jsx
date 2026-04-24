@@ -265,7 +265,7 @@ const ProductAnalytics = () => {
                 </div>
                 {product.file && (
                   <a 
-                    href={`${API}/${product.file}`} 
+                    href={product.file.startsWith('http') ? product.file : `${API}/${product.file}`} 
                     target="_blank" rel="noreferrer"
                     className="flex items-center gap-2 text-[10px] font-black text-[var(--primary)] uppercase tracking-widest hover:text-white transition-colors"
                   >

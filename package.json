@@ -3,9 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-      "scripts": {
+    "scripts": {
       "dev": "vite",
-      "server": "node backend/server.js",
+      "server": "cd main-site/backend && node server.js",
       "start": "concurrently \"npm run server\" \"npm run dev\" --names \"backend,frontend\" --prefix-colors \"cyan,green\"",
       "build": "vite build",
       "lint": "eslint .",

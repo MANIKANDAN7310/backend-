@@ -102,10 +102,14 @@ const UploadProduct = () => {
         setSuccess(isEdit ? 'Product updated!' : 'Product published!');
         setTimeout(() => navigate('/products'), 1500);
       } else {
-        setError(data.message || 'Something went wrong.');
+        // If the backend sent a specific message, use it.
+        // Otherwise use the general status text.
+        const specificError = data.message || data.error?.message || data.error;
+        setError(specificError || 'Upload failed. Please check file size and type.');
+        console.error('Upload Error:', data);
       }
-    } catch {
-      setError('Server error. Is backend running?');
+    } catch (err) {
+      setError(`Connection error: ${err.message}`);
     } finally { setLoading(false); }
   };
 

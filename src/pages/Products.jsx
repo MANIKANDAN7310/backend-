@@ -123,7 +123,7 @@ const Products = () => {
                           className="flex items-center gap-4 cursor-pointer hover:opacity-80 transition-all group"
                         >
                           {product.image ? (
-                            <img src={product.image && product.image.startsWith('http') ? product.image : `${API}/${product.image}`} alt={product.title || 'Product'}
+                            <img src={product.image.startsWith('http') ? product.image : `${API}/${product.image}`} alt={product.title || 'Product'}
                               className="w-12 h-12 rounded-lg object-cover border border-[var(--border)] group-hover:border-[var(--primary)]/50 transition-all shadow-lg shadow-[var(--primary)]/0 group-hover:shadow-[var(--primary)]/10" />
                           ) : (
                             <div className="w-12 h-12 rounded-lg bg-white/5 border border-[var(--border)] flex items-center justify-center text-slate-500 group-hover:border-[var(--primary)]/50 transition-all">
@@ -168,7 +168,7 @@ const Products = () => {
                         <Trash2 size={16} />
                       </button>
                       {product.file && (
-                        <a href={`${API}/${product.file}`} target="_blank" rel="noreferrer"
+                        <a href={product.file.startsWith('http') ? product.file : `${API}/${product.file}`} target="_blank" rel="noreferrer"
                           className="p-2 text-slate-400 hover:text-[var(--primary)] hover:bg-[var(--primary)]/10 rounded-lg transition-all" title="View File">
                           <ExternalLink size={16} />
                         </a>

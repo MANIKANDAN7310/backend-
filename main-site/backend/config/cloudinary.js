@@ -17,9 +17,14 @@ cloudinary.config({
 
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
-  params: {
-    folder: 'octoink_products',
-    allowed_formats: ['jpg', 'png', 'jpeg', 'webp'],
+  params: async (req, file) => {
+    const isZip = file.originalname.match(/\.zip$/i);
+    return {
+      folder: 'octoink_products',
+      resource_type: isZip ? 'raw' : 'auto',
+      // No allowed_formats here because 'raw' doesn't support them
+      // and 'auto' handles images fine.
+    };
   },
 });
 
