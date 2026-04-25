@@ -225,7 +225,7 @@ const Settings = () => {
               </div>
             </div>
 
-            <div className="flex items-center justify-between p-6 rounded-3xl bg-white/[0.02] border border-slate-800 transition-all hover:bg-white/[0.04]">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-6 rounded-3xl bg-white/[0.02] border border-slate-800 transition-all hover:bg-white/[0.04]">
               <div>
                 <p className="font-bold text-white text-lg">{settings.isStoreEnabled ? 'Store is Live' : 'Store is Hidden'}</p>
                 <p className="text-xs text-slate-500 mt-1 max-w-sm">
@@ -236,7 +236,7 @@ const Settings = () => {
               </div>
               <button
                 onClick={() => setSettings(prev => ({ ...prev, isStoreEnabled: !prev.isStoreEnabled }))}
-                className={`w-16 h-8 rounded-full transition-all relative p-1 ${settings.isStoreEnabled ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                className={`shrink-0 w-16 h-8 rounded-full transition-all relative p-1 flex items-center ${settings.isStoreEnabled ? 'bg-emerald-500' : 'bg-slate-700'}`}
               >
                 <div className={`w-6 h-6 bg-white rounded-full shadow-lg transition-all transform ${settings.isStoreEnabled ? 'translate-x-8' : 'translate-x-0'}`} />
               </button>
