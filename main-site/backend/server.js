@@ -114,7 +114,7 @@ import { getDownloadHistory } from "./controllers/productController.js";
 
 app.get("/api/clients", getClients);
 app.delete("/api/clients/delete-all", deleteAllClients);
-app.delete("/api/clients/:id", deleteClient);
+app.delete("/api/clients/:id([0-9a-fA-F]{24})", deleteClient);
 app.get("/api/purchases", getPurchases);
 app.get("/api/downloads/history", getDownloadHistory);
 

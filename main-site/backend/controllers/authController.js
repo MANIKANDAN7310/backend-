@@ -39,52 +39,52 @@ export const login = async (req, res) => {
 
 export const getClients = async (req, res) => {
     try {
-        // Models are now imported at the top
-        
-        // 1. Get all unique emails from custom designs
-        const customEmails = await CustomDesign.distinct('email');
-        
-        // 2. Get all unique userIds from product collection
-        const productUserIds = await Product.find({
+        // 1. Get emails/IDs of users with active engagement
+        const [orderEmails, designEmails, clientEmails, orderUserIds] = await Promise.all([
+            Order.distinct("clientInfo.email"),
+            CustomDesign.distinct("email"),
+            Client.distinct("email"),
+            Order.distinct("userId")
+        ]);
+
+        const activeEmails = [...new Set([...orderEmails, ...designEmails, ...clientEmails])].filter(Boolean);
+        const activeUserIds = orderUserIds.filter(Boolean);
+
+        // 2. Find users who match engagement criteria
+        const users = await User.find({
             $or: [
-                { isCustomDesign: true },
-                { uploadedByUser: true }
-            ]
-        }).distinct('userId');
-        
-        // 3. Get registered users with these emails OR userIds
-        const registeredUsers = await User.find({ 
-            $or: [
-                { email: { $in: customEmails } },
-                { _id: { $in: productUserIds } }
-            ]
-        })
-            .select("-password")
-            .lean();
-        
-        // 4. For emails that don't have a registered user, create guest entries
-        const registeredEmails = registeredUsers.map(u => u.email.toLowerCase());
-        const guestEmails = customEmails.filter(email => !registeredEmails.includes(email.toLowerCase()));
-        
+                { email: { $in: activeEmails } },
+                { _id: { $in: activeUserIds } },
+                { downloadHistory: { $exists: true, $not: { $size: 0 } } }
+            ],
+            isAdmin: { $ne: true }
+        }).select("-password").lean().sort({ createdAt: -1 });
+
+        // 3. For guest emails (not registered) that have custom designs or orders
+        const registeredEmails = users.map(u => u.email.toLowerCase());
+        const guestEmails = activeEmails.filter(email => !registeredEmails.includes(email.toLowerCase()));
+
         const guestUsers = guestEmails.map(email => ({
             _id: `guest_${email}`,
-            name: email.split('@')[0].toUpperCase(),
+            client_name: email.split('@')[0].toUpperCase(),
             email: email,
             role: 'guest',
             isGuest: true,
             createdAt: new Date(),
         }));
 
-        // Combine
-        const allClients = [...registeredUsers, ...guestUsers];
-        
-        // Add client_name field for dashboard compatibility
-        allClients.forEach(c => {
-            if (!c.client_name) c.client_name = c.name || 'Anonymous';
-        });
+        // 4. Combine and map
+        const allClients = [...users, ...guestUsers].map(c => ({
+            _id: c._id,
+            client_name: c.client_name || c.name || c.email.split('@')[0],
+            email: c.email,
+            company_name: c.company_name || "Individual",
+            location: c.location || "N/A",
+            totalDownloads: c.downloadHistory?.length || (c.isGuest ? 1 : 0),
+            createdAt: c.createdAt
+        }));
 
         res.json({ success: true, clients: allClients });
-
     } catch (err) {
         console.error('getClients error:', err);
         res.status(500).json({ success: false, message: err.message });
