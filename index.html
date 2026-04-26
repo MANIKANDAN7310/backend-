@@ -1,23 +1,26 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React</title>
-    <script>
-      window.onerror = function(msg, url, lineNo, columnNo, error) {
-        var message = 'Error: ' + msg + '\nURL: ' + url + '\nLine: ' + lineNo + ':' + columnNo;
-        alert(message);
-        return false;
-      };
-      window.addEventListener('unhandledrejection', function(event) {
-        alert('Unhandled promise rejection: ' + event.reason);
-      });
-    </script>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/logo.png" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Octoink Studios Dashboard</title>
+  <script>
+    window.onerror = function (msg, url, lineNo, columnNo, error) {
+      var message = 'Error: ' + msg + '\nURL: ' + url + '\nLine: ' + lineNo + ':' + columnNo;
+      alert(message);
+      return false;
+    };
+    window.addEventListener('unhandledrejection', function (event) {
+      alert('Unhandled promise rejection: ' + event.reason);
+    });
+  </script>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
+</body>
+
 </html>
