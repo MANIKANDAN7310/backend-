@@ -108,11 +108,12 @@ app.use("/api/stats", statsRoutes);
 app.use("/api/payment", paymentRoutes);
 
 // ─── Dashboard Specific Routes ────────────────────────
-import { getClients, deleteClient } from "./controllers/authController.js";
+import { getClients, deleteClient, deleteAllClients } from "./controllers/authController.js";
 import { getPurchases } from "./controllers/orderController.js";
 import { getDownloadHistory } from "./controllers/productController.js";
 
 app.get("/api/clients", getClients);
+app.delete("/api/clients/delete-all", deleteAllClients);
 app.delete("/api/clients/:id", deleteClient);
 app.get("/api/purchases", getPurchases);
 app.get("/api/downloads/history", getDownloadHistory);
@@ -142,6 +143,28 @@ app.post("/api/banners", uploadBanner.single("image"), async (req, res) => {
         await banner.save();
         res.status(201).json({ success: true, banner });
     } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.put("/api/banners/reorder", async (req, res) => {
+    try {
+        const { banners } = req.body;
+        if (!banners || !Array.isArray(banners)) {
+            return res.status(400).json({ success: false, message: "Invalid banners data" });
+        }
+        
+        const bulkOps = banners.map((b, index) => ({
+            updateOne: {
+                filter: { _id: b._id },
+                update: { $set: { order: b.order ?? index } }
+            }
+        }));
+        
+        await Banner.bulkWrite(bulkOps);
+        res.json({ success: true, message: "Order updated" });
+    } catch (err) {
+        console.error("Reorder error:", err.message);
         res.status(500).json({ success: false, message: err.message });
     }
 });

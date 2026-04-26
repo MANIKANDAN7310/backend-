@@ -3,6 +3,7 @@ import { Check, ArrowLeft, Image as ImageIcon, FileArchive, Plus, Loader2, Alert
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { API_URL as API } from '../config';
+import { fetchWithRetry } from '../utils/api';
 
 
 const categories = [
@@ -95,17 +96,14 @@ const UploadProduct = () => {
     try {
       const url = isEdit ? `${API}/api/products/${editId}` : `${API}/api/products`;
       const method = isEdit ? 'PUT' : 'POST';
-      const res = await fetch(url, { method, body: fd });
-      const data = await res.json();
+      const data = await fetchWithRetry(url, { method, body: fd });
 
       if (data.success) {
         setSuccess(isEdit ? 'Product updated!' : 'Product published!');
         setTimeout(() => navigate('/products'), 1500);
       } else {
-        // If the backend sent a specific message, use it.
-        // Otherwise use the general status text.
-        const specificError = data.message || data.error?.message || data.error;
-        setError(specificError || 'Upload failed. Please check file size and type.');
+        const specificError = data.message || 'Upload failed. Please check file size and type.';
+        setError(specificError);
         console.error('Upload Error:', data);
       }
     } catch (err) {

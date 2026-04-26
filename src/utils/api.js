@@ -10,7 +10,7 @@ export const fetchWithRetry = async (url, options = {}, retries = 5, delay = 500
 
     for (let i = 0; i < retries; i++) {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // Increased to 60s for uploads
 
         try {
             const response = await fetch(url, {

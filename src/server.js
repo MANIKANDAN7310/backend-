@@ -466,11 +466,12 @@ app.post("/api/banners",
     upload.fields([{ name: "image", maxCount: 1 }]),
     async (req, res) => {
         try {
-            const { mainHeading, subHeading, description, button1Text, button1Link, button2Text, button2Link, order } = req.body;
-            if (!mainHeading) return res.status(400).json({ success: false, message: "Heading is required" });
+            const { heading, mainHeading, subHeading, description, button1Text, button1Link, button2Text, button2Link, order } = req.body;
+            const finalHeading = heading || mainHeading;
+            if (!finalHeading) return res.status(400).json({ success: false, message: "Heading is required" });
             const imagePath = req.files?.image?.[0] ? "uploads/images/" + req.files.image[0].filename : "";
             const banner = new Banner({
-                heading: mainHeading,
+                heading: finalHeading,
                 subHeading, description, button1Text, button1Link, button2Text, button2Link,
                 image: imagePath,
                 order: order ?? 0,
@@ -500,8 +501,9 @@ app.put("/api/banners/:id",
     upload.fields([{ name: "image", maxCount: 1 }]),
     async (req, res) => {
         try {
-            const { mainHeading, subHeading, description, button1Text, button1Link, button2Text, button2Link } = req.body;
-            const updates = { heading: mainHeading, subHeading, description, button1Text, button1Link, button2Text, button2Link };
+            const { heading, mainHeading, subHeading, description, button1Text, button1Link, button2Text, button2Link } = req.body;
+            const finalHeading = heading || mainHeading;
+            const updates = { heading: finalHeading, subHeading, description, button1Text, button1Link, button2Text, button2Link };
             if (req.files?.image?.[0]) updates.image = "uploads/images/" + req.files.image[0].filename;
             const banner = await Banner.findByIdAndUpdate(req.params.id, updates, { new: true });
             if (!banner) return res.status(404).json({ success: false, message: "Banner not found" });

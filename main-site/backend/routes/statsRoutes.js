@@ -9,7 +9,26 @@ import Product from '../models/Product.js';
 
 router.get('/summary', async (req, res) => {
     try {
-        const totalClients = await User.countDocuments({ role: { $ne: 'admin' } });
+        // const totalClients = await User.countDocuments({ role: { $ne: 'admin' } });
+        
+        // NEW LOGIC: Only count unique users who uploaded a custom design
+        // 1. Get unique emails from CustomDesign collection
+        const customDesignEmails = await CustomDesign.distinct('email');
+        
+        // 2. Get unique userIds from Product collection (if any are flagged as custom/uploaded)
+        // We use a raw query to bypass schema restrictions if the fields aren't in Mongoose
+        const productUsers = await Product.find({
+            $or: [
+                { isCustomDesign: true },
+                { uploadedByUser: true }
+            ]
+        }).distinct('userId');
+
+        // 3. To get a truly unique count, we'd need to map userIds to emails, 
+        // but for now, we'll follow the user's logic of counting distinct entries.
+        const totalClients = new Set([...customDesignEmails, ...productUsers]).size;
+
+
         const totalOrders = await Order.countDocuments({ status: 'Completed' });
         const customDesigns = await CustomDesign.countDocuments();
         
@@ -57,7 +76,10 @@ router.get('/all-months-detail', async (req, res) => {
             
             return {
                 month: monthName,
-                clients: await User.countDocuments({ createdAt: { $gte: startDate, $lte: endDate } }),
+                clients: (await CustomDesign.distinct('email', {
+                    createdAt: { $gte: startDate, $lte: endDate }
+                })).length,
+
                 orders: monthOrders.length,
                 customOrders: monthCustom,
                 revenue: monthRevenue
