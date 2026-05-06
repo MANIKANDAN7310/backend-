@@ -141,10 +141,10 @@ const Products = () => {
                       {product.category || 'Uncategorized'}
                     </span>
                   </td>
-                  <td className="px-6 py-4 font-medium">${Number(product.price || 0).toFixed(2)}</td>
+                  <td className="px-6 py-4 font-medium">₹{Number(product.price || 0).toFixed(2)}</td>
                   <td className="px-6 py-4">
                     {product.originalPrice
-                      ? <span className="text-emerald-500 font-bold">${Number(product.originalPrice).toFixed(2)}</span>
+                      ? <span className="text-emerald-500 font-bold">₹{Number(product.originalPrice).toFixed(2)}</span>
                       : <span className="text-[var(--text-dim)]">—</span>
                     }
                   </td>

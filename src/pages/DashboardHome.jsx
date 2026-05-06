@@ -187,7 +187,7 @@ const DashboardHome = () => {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <SummaryCard title="Total Revenue" value={loading ? '...' : stats.totalRevenue.toLocaleString()} prefix="$" icon={ShoppingCart} color="emerald" pulse={true} />
+        <SummaryCard title="Total Revenue" value={loading ? '...' : stats.totalRevenue.toLocaleString()} prefix="₹" icon={ShoppingCart} color="emerald" pulse={true} />
         <SummaryCard title="Total Clients" value={loading ? '...' : stats.totalClients.toLocaleString()} icon={Users} color="violet" />
         <SummaryCard title="Total Downloads" value={loading ? '...' : stats.totalDownloads.toLocaleString()} icon={Download} color="amber" />
         <SummaryCard title="Custom Orders" value={loading ? '...' : stats.customOrders.toLocaleString()} icon={Mail} color="purple" />

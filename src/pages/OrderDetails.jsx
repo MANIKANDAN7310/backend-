@@ -182,7 +182,7 @@ const OrderDetails = () => {
                   <p className="text-sm text-[var(--text-dim)] mt-1">{order.isCustomDesign ? 'Custom Submission' : 'Digital Download · Full License'}</p>
                 </div>
               </div>
-              <p className="font-bold text-lg">${(order.price || 0).toFixed(2)}</p>
+              <p className="font-bold text-lg">₹{(order.price || 0).toFixed(2)}</p>
             </div>
 
             <div className="mt-8 border-t border-[var(--border)] pt-6">
@@ -256,7 +256,7 @@ const OrderDetails = () => {
                 </div>
                 <div className="p-3 rounded-xl bg-white/5 border border-[var(--border)]">
                   <p className="text-[10px] font-bold text-[var(--text-dim)] uppercase tracking-wider mb-1">Total Spent</p>
-                  <p className="text-lg font-black text-emerald-500">$542.50</p>
+                  <p className="text-lg font-black text-emerald-500">₹542.50</p>
                 </div>
               </div>
 
@@ -271,7 +271,7 @@ const OrderDetails = () => {
                 </div>
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-[var(--text-dim)] font-medium">Avg. Order Value</span>
-                  <span className="font-bold">$45.20</span>
+                  <span className="font-bold">₹45.20</span>
                 </div>
               </div>
 
@@ -299,21 +299,21 @@ const OrderDetails = () => {
                   {order.paymentStatus}
                 </span>
               </div>
-              <p className="text-2xl font-bold">${(order.price || 0).toFixed(2)}</p>
+              <p className="text-2xl font-bold">₹{(order.price || 0).toFixed(2)}</p>
             </div>
 
             <div className="space-y-3">
               <div className="flex justify-between text-xs font-medium">
                 <span className="text-[var(--text-dim)]">Subtotal</span>
-                <span>${(order.price || 0).toFixed(2)}</span>
+                <span>₹{(order.price || 0).toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-xs font-medium">
                 <span className="text-[var(--text-dim)]">Transaction Fee</span>
-                <span>$0.00</span>
+                <span>₹0.00</span>
               </div>
               <div className="flex justify-between font-bold pt-3 border-t border-[var(--border)]">
                 <span>Total Amount</span>
-                <span>${(order.price || 0).toFixed(2)}</span>
+                <span>₹{(order.price || 0).toFixed(2)}</span>
               </div>
             </div>
           </div>

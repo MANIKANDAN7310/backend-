@@ -153,7 +153,7 @@ const ProductAnalytics = () => {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-[var(--text-dim)] uppercase tracking-wider">Price</span>
-                <span className="text-lg font-black text-white">${Number(product.price || 0).toFixed(2)}</span>
+                <span className="text-lg font-black text-white">₹{Number(product.price || 0).toFixed(2)}</span>
               </div>
               <div className="pt-4 border-t border-[var(--border)]">
                 <p className="text-xs text-[var(--text-dim)] leading-relaxed">{product.description || 'No description available for this product.'}</p>

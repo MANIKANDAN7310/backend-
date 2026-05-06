@@ -94,8 +94,13 @@ export const getClients = async (req, res) => {
 
 export const deleteClient = async (req, res) => {
     try {
-        await User.findByIdAndDelete(req.params.id);
-        res.json({ success: true, message: 'Client deleted' });
+        const { id } = req.params;
+        if (id === 'delete-all') {
+            return res.status(400).json({ success: false, message: 'Invalid ID' });
+        }
+
+        await User.findByIdAndDelete(id);
+        res.json({ success: true, message: 'Client deleted successfully' });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -103,23 +108,20 @@ export const deleteClient = async (req, res) => {
 
 export const deleteAllClients = async (req, res) => {
     try {
-        // Delete all users except admins
-        await User.deleteMany({ isAdmin: { $ne: true } });
-        
-        // Delete all client tracking records
+        // As requested: Delete all client records properly
         await Client.deleteMany({});
         
-        // Delete all related transactional data
+        // Also clearing related data to maintain system integrity
+        await User.deleteMany({ isAdmin: { $ne: true } });
         await CustomDesign.deleteMany({});
         await Download.deleteMany({});
         await Order.deleteMany({});
         
-        res.json({ 
+        res.status(200).json({ 
             success: true, 
-            message: 'All client records and related data cleared successfully (Admin accounts preserved)' 
+            message: 'All clients deleted successfully' 
         });
     } catch (err) {
-        console.error("Delete All Clients Error:", err);
         res.status(500).json({ success: false, message: err.message });
     }
 };

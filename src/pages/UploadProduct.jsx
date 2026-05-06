@@ -158,7 +158,7 @@ const UploadProduct = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-2 text-[var(--text-dim)]">Price ($) *</label>
+                <label className="block text-sm font-medium mb-2 text-[var(--text-dim)]">Price (₹) *</label>
                 <input name="price" value={form.price} onChange={handleChange}
                   type="number" placeholder="25.00"
                   className="w-full bg-white/5 border border-[var(--border)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all" />
@@ -167,7 +167,7 @@ const UploadProduct = () => {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-2 text-[var(--text-dim)]">Original Price ($)</label>
+                <label className="block text-sm font-medium mb-2 text-[var(--text-dim)]">Original Price (₹)</label>
                 <input name="originalPrice" value={form.originalPrice} onChange={handleChange}
                   type="number" placeholder="19.99"
                   className="w-full bg-white/5 border border-[var(--border)] rounded-xl px-4 py-3 outline-none focus:border-[var(--primary)] transition-all" />

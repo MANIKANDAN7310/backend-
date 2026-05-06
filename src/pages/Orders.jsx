@@ -71,7 +71,7 @@ const Orders = () => {
           product: p.productName || "Digital Product",
           customer: p.clientName || "Unknown",
           email: p.clientEmail || "N/A",
-          amount: `$${p.amount || 0}`,
+          amount: `₹${p.amount || 0}`,
           status: 'PAID',
           id: p.paymentId || "N/A",
           date: dateStr
@@ -89,7 +89,7 @@ const Orders = () => {
       doc.setTextColor(100);
       doc.text(`Report Generated: ${new Date().toLocaleString()}`, 14, 30);
       doc.text(`Total Sales: ${filtered.length}`, 14, 38);
-      doc.text(`Total Revenue: $${totalRevenue.toLocaleString()}`, 14, 46);
+      doc.text(`Total Revenue: ₹${totalRevenue.toLocaleString()}`, 14, 46);
 
       autoTable(doc, {
         columns: columns,
@@ -187,7 +187,7 @@ const Orders = () => {
          </div>
          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
             <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Total Revenue</p>
-            <h3 className="text-3xl font-black text-emerald-500">${purchases.reduce((s, p) => s + (p.amount || 0), 0).toLocaleString()}</h3>
+            <h3 className="text-3xl font-black text-emerald-500">₹{purchases.reduce((s, p) => s + (p.amount || 0), 0).toLocaleString()}</h3>
          </div>
          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
             <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Uniques</p>
@@ -254,7 +254,7 @@ const Orders = () => {
                     <td className="px-8 py-6">
                        <div className="flex flex-col gap-2">
                           <div className="flex items-center gap-2">
-                             <span className="text-sm font-black text-emerald-500">${p.amount}</span>
+                             <span className="text-sm font-black text-emerald-500">₹{p.amount}</span>
                              <span className="px-2 py-0.5 bg-emerald-500/10 text-emerald-500 text-[8px] font-black rounded uppercase border border-emerald-500/20">PAID</span>
                           </div>
                           <p className="text-[10px] font-mono text-slate-500 truncate max-w-[150px]">{p.paymentId}</p>

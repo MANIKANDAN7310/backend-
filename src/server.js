@@ -698,7 +698,7 @@ app.post("/api/payment/create-order", async (req, res) => {
 
         const options = {
             amount: Math.round(amount * 100), // convert to paisa
-            currency: currency || "INR",
+            currency: "INR", // ALWAYS process in INR
             receipt: `receipt_${Date.now()}`,
         };
 
