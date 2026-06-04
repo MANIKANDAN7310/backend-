@@ -23,7 +23,7 @@ const menuItems = [
   { path: '/clients', icon: BarChart3, label: 'Clients' },
   { path: '/products', icon: Package, label: 'Products' },
   { path: '/upload', icon: Upload, label: 'Upload Product' },
-  { path: '/hero-banners', icon: Image, label: 'Hero Banners' },
+  { path: '/hero-banners', icon: Image, label: 'Store Layout' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
 
