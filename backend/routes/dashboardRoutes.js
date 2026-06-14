@@ -9,26 +9,44 @@ import Order from '../models/Order.js';
 
 const router = express.Router();
 
-// Stats Summary
+// Stats Summary (supports ?month=6&year=2026)
 router.get('/stats/summary', async (req, res) => {
   try {
-    const clientsCount = await Client.countDocuments();
-    const ordersCount = await Order.countDocuments();
-    const products = await Product.find();
-    const totalDownloads = products.reduce((sum, p) => sum + (p.downloads || 0), 0);
-    
-    // For revenue, read from purchases.json for now
-    let purchases = [];
-    try {
-      purchases = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'purchases.json'), 'utf8'));
-    } catch (e) {}
-    const revenue = purchases.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    const now = new Date();
+    const y = parseInt(req.query.year) || now.getFullYear();
+    const m = req.query.month ? parseInt(req.query.month) - 1 : now.getMonth(); // convert 1-indexed to 0-indexed
+
+    const start = new Date(y, m, 1);
+    const end = new Date(y, m + 1, 0, 23, 59, 59);
+
+    const [clients, orders, products] = await Promise.all([
+      Client.find({ createdAt: { $gte: start, $lte: end } }),
+      Order.find({ status: 'Paid', createdAt: { $gte: start, $lte: end } }),
+      Product.find()
+    ]);
+
+    // Count downloads that occurred in the selected month
+    const Download = (await import('../models/Download.js')).default;
+    const CustomDesign = (await import('../models/CustomDesign.js')).default;
+
+    const [downloads, designs] = await Promise.all([
+      Download.find({ date: { $gte: start, $lte: end } }),
+      CustomDesign.find({ createdAt: { $gte: start, $lte: end } })
+    ]);
+
+    const revenue = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+
+    // Unique clients from all sources
+    const emails = new Set();
+    orders.forEach(o => o.clientInfo?.email && emails.add(o.clientInfo.email.toLowerCase()));
+    designs.forEach(d => d.email && emails.add(d.email.toLowerCase()));
+    downloads.forEach(d => d.email && d.email !== 'Anonymous' && emails.add(d.email.toLowerCase()));
 
     res.json({
       success: true,
-      totalClients: clientsCount,
-      totalOrders: totalDownloads, // In settings page, "Store Downloads" maps to totalOrders in the UI
-      customDesigns: ordersCount,
+      totalClients: emails.size,
+      totalOrders: downloads.length,
+      customDesigns: designs.length,
       revenue: revenue
     });
   } catch (error) {
@@ -90,7 +108,7 @@ router.get('/stats/all-months-detail', async (req, res) => {
       };
     }));
 
-    res.json({ success: true, data: stats.filter(s => s.totalClients > 0 || s.monthIndex <= new Date().getMonth() + 1) });
+    res.json({ success: true, data: stats });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

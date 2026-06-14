@@ -1431,12 +1431,12 @@ app.put("/api/settings", async (req, res) => {
 });
 
 // GET - Detailed Monthly Stats
-// GET - Current month summary for Dashboard Snapshot
+// GET - Month summary for Dashboard Snapshot (supports ?month=6&year=2026)
 app.get("/api/stats/summary", async (req, res) => {
     try {
         const now = new Date();
-        const y = now.getFullYear();
-        const m = now.getMonth(); // 0-indexed
+        const y = parseInt(req.query.year) || now.getFullYear();
+        const m = req.query.month ? parseInt(req.query.month) - 1 : now.getMonth(); // convert 1-indexed to 0-indexed
 
         const start = new Date(y, m, 1);
         const end = new Date(y, m + 1, 0, 23, 59, 59);
