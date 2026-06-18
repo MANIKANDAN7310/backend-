@@ -98,22 +98,6 @@ const Settings = () => {
       const fullMonths = months.map((monthName, idx) => {
         const existing = rawData.find(d => d.monthIndex === idx + 1);
         if (existing) return existing;
-        
-        // Inject mock data for the current month to demonstrate the active UI
-        if (idx === new Date().getMonth()) {
-          return {
-            month: monthName,
-            monthIndex: idx + 1,
-            totalClients: 2,
-            totalOrders: 1,
-            customDesigns: 1,
-            revenue: 1250,
-            clientList: [
-              { id: 'mock1', name: 'John Doe', email: 'john@example.com', type: 'Customer' },
-              { id: 'mock2', name: 'Sarah Smith', email: 'sarah@example.com', type: 'Inquiry' }
-            ]
-          };
-        }
 
         return {
           month: monthName,
