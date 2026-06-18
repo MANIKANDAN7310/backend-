@@ -87,7 +87,9 @@ const customDesignSchema = new mongoose.Schema({
     requirement: { type: String },
     designFile: { type: String },
     designFileOriginalName: { type: String },
+    customDesignUrl: { type: String },
     refFiles: [{ path: String, originalName: String }],
+    status: { type: String, default: "Pending" },
     createdAt: { type: Date, default: Date.now },
 });
 const CustomDesign = mongoose.model("CustomDesign", customDesignSchema);
@@ -571,6 +573,16 @@ app.get("/api/contact", async (req, res) => {
     }
 });
 
+// DELETE ALL - contact messages
+app.delete("/api/contact/delete-all", async (req, res) => {
+    try {
+        await Contact.deleteMany({});
+        res.json({ success: true, message: "All contact messages deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // DELETE - a contact message
 app.delete("/api/contact/:id", async (req, res) => {
     try {
@@ -872,11 +884,75 @@ app.get("/api/custom-design", async (req, res) => {
     }
 });
 
+// DELETE ALL - custom designs
+app.delete("/api/custom-design/delete-all", async (req, res) => {
+    try {
+        await CustomDesign.deleteMany({});
+        res.json({ success: true, message: "All custom design orders deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 app.delete("/api/custom-design/:id", async (req, res) => {
     try {
         const order = await CustomDesign.findByIdAndDelete(req.params.id);
         if (!order) return res.status(404).json({ success: false, message: "Not found" });
         res.json({ success: true, message: "Deleted" });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// ── ORDER ROUTES (for Custom Orders page) ─────────────────
+// GET - All orders
+app.get("/api/orders", async (req, res) => {
+    try {
+        const orders = await CustomDesign.find().sort({ createdAt: -1 });
+        res.json({ success: true, orders });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// GET - Custom design orders only
+app.get("/api/orders/custom-designs", async (req, res) => {
+    try {
+        const orders = await CustomDesign.find().sort({ createdAt: -1 });
+        res.json({ success: true, orders });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// DELETE ALL - orders (custom designs)
+app.delete("/api/orders/delete-all", async (req, res) => {
+    try {
+        await CustomDesign.deleteMany({});
+        res.json({ success: true, message: "All custom design orders deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// PUT - Update order status
+app.put("/api/orders/:id/status", async (req, res) => {
+    try {
+        const { status } = req.body;
+        const order = await CustomDesign.findByIdAndUpdate(req.params.id, { status }, { new: true });
+        if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+        res.json({ success: true, order });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// DELETE - Single order
+app.delete("/api/orders/:id", async (req, res) => {
+    try {
+        const order = await CustomDesign.findByIdAndDelete(req.params.id);
+        if (!order) return res.status(404).json({ success: false, message: "Order not found" });
+        res.json({ success: true, message: "Order deleted" });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }

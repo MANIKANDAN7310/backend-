@@ -12,6 +12,7 @@ const ContactMails = () => {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [notification, setNotification] = useState(null);
 
 
   const fetchMessages = async () => {
@@ -40,8 +41,35 @@ const ContactMails = () => {
         setMessages(prev => prev.filter(m => m._id !== id));
         if (selectedMessage?._id === id) setSelectedMessage(null);
         setDeleteConfirm(null);
+        showNotify('Message deleted successfully');
       }
     } catch (e) { console.error(e); }
+  };
+
+  const handleDeleteAll = async () => {
+    if (!window.confirm('ARE YOU SURE? This will permanently delete ALL contact messages. This cannot be undone.')) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${API}/api/contact/delete-all`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        setMessages([]);
+        setSelectedMessage(null);
+        showNotify('All messages deleted successfully');
+      } else {
+        showNotify(data.message || 'Delete failed', 'error');
+      }
+    } catch (e) {
+      console.error('Delete All Error:', e);
+      showNotify('Connection error during deletion', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const showNotify = (msg, type = 'success') => {
+    setNotification({ msg, type });
+    setTimeout(() => setNotification(null), 3000);
   };
 
   const filtered = messages.filter(m => {
@@ -73,6 +101,16 @@ const ContactMails = () => {
   return (
     <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 h-[calc(100vh-var(--header-height)-120px)] flex flex-col max-w-7xl mx-auto w-full">
 
+      {/* Notification */}
+      {notification && (
+        <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-6 py-4 rounded-2xl shadow-2xl border ${
+          notification.type === 'error' ? 'bg-rose-500/10 border-rose-500/20 text-rose-500' : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
+        } backdrop-blur-md animate-in slide-in-from-right-10`}>
+          {notification.type === 'error' ? <AlertCircle size={20} /> : <Mail size={20} />}
+          <p className="font-bold">{notification.msg}</p>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
         <div>
@@ -88,6 +126,13 @@ const ContactMails = () => {
             title="Refresh"
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+          </button>
+          <button
+            onClick={handleDeleteAll}
+            disabled={loading || messages.length === 0}
+            className="flex items-center gap-2 px-4 py-3 bg-rose-500/10 border border-rose-500/20 text-rose-500 hover:bg-rose-500 hover:text-white rounded-xl font-bold text-sm transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Trash2 size={16} /> Delete All
           </button>
           <div className="w-full md:w-[350px] relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />

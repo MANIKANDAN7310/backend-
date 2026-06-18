@@ -96,8 +96,19 @@ const Settings = () => {
       console.error("[DEBUG] Modal Fetch Failed, falling back to empty months:", e);
     } finally {
       const fullMonths = months.map((monthName, idx) => {
-        const existing = rawData.find(d => d.monthIndex === idx + 1);
-        if (existing) return existing;
+        const existing = rawData.find(d => d.month === monthName || d.monthIndex === idx + 1);
+        
+        if (existing) {
+          return {
+            month: existing.month || monthName,
+            monthIndex: existing.monthIndex || idx + 1,
+            totalClients: existing.totalClients || existing.clients || 0,
+            totalOrders: existing.totalOrders || existing.orders || 0,
+            customDesigns: existing.customDesigns || existing.customOrders || 0,
+            revenue: existing.revenue || 0,
+            clientList: existing.clientList || []
+          };
+        }
 
         return {
           month: monthName,
