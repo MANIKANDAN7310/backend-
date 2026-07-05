@@ -4,7 +4,12 @@ import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
 import mongoose from "mongoose";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import timeout from "connect-timeout";
 import connectDB from "./config/db.js";
+import logger from "./utils/logger.js";
+import fs from "fs";
 
 // Routes
 import authRoutes from "./routes/authRoutes.js";
@@ -18,18 +23,32 @@ import paymentRoutes from "./routes/paymentRoutes.js";
 import Banner from "./models/Banner.js";
 import Settings from "./models/Settings.js";
 import Contact from "./models/Contact.js";
+import { sendEmail } from "./utils/sendEmail.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.join(__dirname, ".env") });
 
+// ═══════════════════════════════════════════════════════
+//  Environment Validation
+// ═══════════════════════════════════════════════════════
+const requiredEnv = ["JWT_SECRET", "MONGO_URI"];
+requiredEnv.forEach((key) => {
+    if (!process.env[key]) {
+        console.error(`❌ CRITICAL: ${key} is missing from environment variables`);
+        process.exit(1);
+    }
+});
+
 const app = express();
 const PORT = process.env.PORT || 4999;
 
 // ═══════════════════════════════════════════════════════
-//  CORS — allow Firebase + localhost + all origins
+//  Security & Middlewares
 // ═══════════════════════════════════════════════════════
+app.use(helmet());
+
 const allowedOrigins = [
     "https://octoinkstudios-2b582.web.app",
     "https://octoinkstudios-2b582.firebaseapp.com",
@@ -41,18 +60,32 @@ const allowedOrigins = [
 
 app.use(cors({
     origin: function (origin, callback) {
-        // Allow requests with no origin (mobile apps, curl, etc.)
         if (!origin) return callback(null, true);
         if (allowedOrigins.includes(origin)) {
             return callback(null, true);
         }
-        // Allow any origin for now to prevent CORS issues
         return callback(null, true);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
 }));
+
+// Rate Limiting
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 200, // limit each IP to 200 requests per windowMs
+    message: { success: false, message: "Too many requests, try again later" },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+app.use("/api/", limiter);
+
+// Request Timeout
+app.use(timeout("60s")); // Increased to 60s for uploads
+app.use((req, res, next) => {
+    if (!req.timedout) next();
+});
 
 // Handle preflight requests
 app.options("*", cors());
@@ -68,9 +101,10 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 //  MongoDB Connection with Reconnection Logic
 // ═══════════════════════════════════════════════════════
 connectDB().then(() => {
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
         console.log(`🚀 Server running on port ${PORT}`);
     });
+    server.timeout = 300000; // 5 minutes for large uploads
 });
 
 // Monitor MongoDB connection
@@ -83,15 +117,15 @@ mongoose.connection.on("error", (err) => {
     console.error("❌ MongoDB connection error:", err.message);
 });
 
-// ═══════════════════════════════════════════════════════
-//  Request Logger (helps debug issues in production)
-// ═══════════════════════════════════════════════════════
+// Request Logger (using Winston)
 app.use((req, res, next) => {
     const start = Date.now();
     res.on("finish", () => {
         const duration = Date.now() - start;
         if (res.statusCode >= 400) {
-            console.log(`[${res.statusCode}] ${req.method} ${req.originalUrl} - ${duration}ms`);
+            logger.warn(`${req.method} ${req.originalUrl} - [${res.statusCode}] ${duration}ms`);
+        } else {
+            logger.info(`${req.method} ${req.originalUrl} - [${res.statusCode}] ${duration}ms`);
         }
     });
     next();
@@ -108,14 +142,16 @@ app.use("/api/stats", statsRoutes);
 app.use("/api/payment", paymentRoutes);
 
 // ─── Dashboard Specific Routes ────────────────────────
-import { getClients, deleteClient, deleteAllClients } from "./controllers/authController.js";
-import { getPurchases } from "./controllers/orderController.js";
+import { getClients, deleteClient, getClientById, deleteAllClients } from "./controllers/authController.js";
+import { getPurchases, deletePurchasesAll } from "./controllers/orderController.js";
 import { getDownloadHistory } from "./controllers/productController.js";
 
 app.get("/api/clients", getClients);
 app.delete("/api/clients/delete-all", deleteAllClients);
+app.get("/api/clients/:id([0-9a-fA-F]{24})", getClientById);
 app.delete("/api/clients/:id([0-9a-fA-F]{24})", deleteClient);
 app.get("/api/purchases", getPurchases);
+app.delete("/api/purchases/delete-all", deletePurchasesAll);
 app.get("/api/downloads/history", getDownloadHistory);
 
 
@@ -153,14 +189,14 @@ app.put("/api/banners/reorder", async (req, res) => {
         if (!banners || !Array.isArray(banners)) {
             return res.status(400).json({ success: false, message: "Invalid banners data" });
         }
-        
+
         const bulkOps = banners.map((b, index) => ({
             updateOne: {
                 filter: { _id: b._id },
                 update: { $set: { order: b.order ?? index } }
             }
         }));
-        
+
         await Banner.bulkWrite(bulkOps);
         res.json({ success: true, message: "Order updated" });
     } catch (err) {
@@ -225,7 +261,7 @@ app.put("/api/settings", async (req, res) => {
 app.get("/api/contact", async (req, res) => {
     try {
         const contacts = await Contact.find().sort({ createdAt: -1 });
-        res.json({ success: true, contacts, messages: contacts });
+        res.json({ success: true, contacts });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -235,6 +271,23 @@ app.post("/api/contact", async (req, res) => {
     try {
         const contact = new Contact(req.body);
         await contact.save();
+
+        // Send email notification
+        const { name, email, service, message } = req.body;
+        await sendEmail({
+            subject: `New Contact Form Submission from ${name}`,
+            text: `You have received a new message from the contact form.\n\nName: ${name}\nEmail: ${email}\nService: ${service || 'N/A'}\nMessage: ${message}`,
+            html: `<p>You have received a new message from the contact form.</p>
+                   <ul>
+                       <li><strong>Name:</strong> ${name}</li>
+                       <li><strong>Email:</strong> ${email}</li>
+                       <li><strong>Service:</strong> ${service || 'N/A'}</li>
+                   </ul>
+                   <p><strong>Message:</strong></p>
+                   <p>${message}</p>`,
+            replyTo: email
+        });
+
         res.status(201).json({ success: true, contact });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
@@ -265,12 +318,15 @@ app.get("/", (req, res) => {
 app.get("/api/health", (req, res) => {
     res.json({
         success: true,
+        status: "OK",
+        uptime: process.uptime(),
         dbState: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+        timestamp: new Date().toISOString()
     });
 });
 
 // ═══════════════════════════════════════════════════════
-//  Keep-Alive Ping (prevents Render free tier sleep)
+//  Keep-Alive Ping (prevents Render free tier sleep) & Cron Jobs
 // ═══════════════════════════════════════════════════════
 const SELF_URL = process.env.VITE_API_URL || `http://localhost:${PORT}`;
 
@@ -281,6 +337,16 @@ setInterval(() => {
             .catch(() => console.log("⚠️ Keep-alive ping failed (this is okay on startup)"));
     }
 }, 14 * 60 * 1000); // Every 14 minutes (Render sleeps after 15)
+// Reconciliation Cron Job
+import { reconcilePendingPayments } from './jobs/reconciliation.js';
+setInterval(() => {
+    reconcilePendingPayments().catch(err => console.error(JSON.stringify({ type: "cron_reconcile_error", error: err.message })));
+}, 60 * 60 * 1000); // Run once every hour
+
+// Run once 5 minutes after startup
+setTimeout(() => {
+    reconcilePendingPayments().catch(err => console.error(JSON.stringify({ type: "startup_reconcile_error", error: err.message })));
+}, 5 * 60 * 1000);
 
 // ═══════════════════════════════════════════════════════
 //  Global Error Handlers
@@ -296,20 +362,58 @@ app.use((req, res) => {
 
 // Global error handler
 app.use((err, req, res, next) => {
-    console.error("🔥 Unhandled error:", err.stack || err.message);
+    if (req.timedout) {
+        logger.error("Request Timeout:", { url: req.originalUrl });
+        return res.status(503).json({ success: false, message: "Request timed out" });
+    }
+
+    logger.error("Unhandled error:", {
+        message: err.message,
+        stack: err.stack,
+        url: req.originalUrl,
+        method: req.method
+    });
+
     res.status(500).json({
         success: false,
-        message: "Internal server error",
+        message: process.env.NODE_ENV === 'production' ? "Internal server error" : err.message,
     });
 });
 
 // Catch unhandled promise rejections
 process.on("unhandledRejection", (reason) => {
-    console.error("⚠️ Unhandled Promise Rejection:", reason);
+    logger.error("Unhandled Promise Rejection:", { reason });
 });
 
 // Catch uncaught exceptions
 process.on("uncaughtException", (err) => {
-    console.error("💥 Uncaught Exception:", err);
-    // Don't exit — keep server running
+    logger.error("Uncaught Exception:", { message: err.message, stack: err.stack });
 });
+
+// ═══════════════════════════════════════════════════════
+//  Graceful Shutdown
+// ═══════════════════════════════════════════════════════
+import redis from "./utils/redis.js";
+
+const gracefulShutdown = async (signal) => {
+    logger.info(`🛰️ ${signal} received. Starting graceful shutdown...`);
+
+    try {
+        await mongoose.connection.close();
+        logger.info("📁 MongoDB connection closed.");
+
+        if (redis && typeof redis.quit === 'function') {
+            await redis.quit();
+            logger.info("⚡ Redis connection closed.");
+        }
+
+        logger.info("👋 Shutdown complete. Goodbye!");
+        process.exit(0);
+    } catch (err) {
+        logger.error("❌ Error during shutdown:", { message: err.message });
+        process.exit(1);
+    }
+};
+
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));

@@ -1,5 +1,6 @@
 import Order from '../models/Order.js';
 import CustomDesign from '../models/CustomDesign.js';
+import { sendEmail } from '../utils/sendEmail.js';
 
 export const getOrders = async (req, res) => {
     try {
@@ -38,6 +39,46 @@ export const createCustomDesign = async (req, res) => {
         });
 
         await newDesign.save();
+
+        // Prepare image links for email
+        let imagesText = '';
+        let imagesHtml = '';
+
+        if (customDesignUrl) {
+            imagesText += `\n\nMain Design File: ${customDesignUrl}`;
+            imagesHtml += `<h3>Main Design File:</h3>
+                           <p><a href="${customDesignUrl}" target="_blank">Download / View Main File</a></p>
+                           <img src="${customDesignUrl}" alt="Main Design" style="max-width: 100%; max-height: 400px; height: auto;" />`;
+        }
+
+        if (refFiles && refFiles.length > 0) {
+            imagesText += `\n\nReference Files:\n`;
+            imagesHtml += `<h3>Reference Files:</h3>`;
+            refFiles.forEach((file, index) => {
+                imagesText += `${index + 1}. ${file.path} (${file.originalName})\n`;
+                imagesHtml += `<p><a href="${file.path}" target="_blank">Download / View Reference ${index + 1} (${file.originalName})</a></p>
+                               <img src="${file.path}" alt="Reference ${index + 1}" style="max-width: 100%; max-height: 400px; height: auto; margin-bottom: 10px;" />`;
+            });
+        }
+
+        // Send email notification for custom design
+        await sendEmail({
+            subject: `New Custom Design Order from ${email}`,
+            text: `You have received a new custom design order.\n\nEmail: ${email}\nCategory: ${category || 'N/A'}\nDimensions: ${width || 'N/A'}x${height || 'N/A'}\nColors: ${colors || 'N/A'}\nRequirement: ${requirement || 'None'}${imagesText}`,
+            html: `<p>You have received a new custom design order.</p>
+                   <ul>
+                       <li><strong>Email:</strong> ${email}</li>
+                       <li><strong>Category:</strong> ${category || 'N/A'}</li>
+                       <li><strong>Dimensions:</strong> ${width || 'N/A'}x${height || 'N/A'}</li>
+                       <li><strong>Colors:</strong> ${colors || 'N/A'}</li>
+                   </ul>
+                   <p><strong>Requirement:</strong></p>
+                   <p>${requirement || 'None'}</p>
+                   <hr />
+                   ${imagesHtml}`,
+            replyTo: email
+        });
+
         res.status(201).json({ success: true, customDesignId: newDesign._id });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
@@ -69,11 +110,26 @@ export const getPurchases = async (req, res) => {
             .populate('userId', 'name email')
             .populate('items.productId')
             .sort({ createdAt: -1 });
-        res.json({ success: true, purchases: orders });
+
+        // Map to format expected by dashboard
+        const mappedPurchases = orders.map(order => ({
+            _id: order._id,
+            id: order._id, // Dashboard uses p.id in some places
+            productName: order.items[0]?.title || "Digital Product",
+            clientName: order.clientInfo?.name || order.userId?.name || "Unknown",
+            clientEmail: order.clientInfo?.email || order.userId?.email || "N/A",
+            amount: order.totalAmount || 0,
+            paymentId: order.razorpayPaymentId || "N/A",
+            downloadedAt: order.createdAt,
+            status: order.status
+        }));
+
+        res.json({ success: true, purchases: mappedPurchases });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
 };
+
 
 export const deleteOrder = async (req, res) => {
     try {
@@ -91,6 +147,15 @@ export const deleteOrder = async (req, res) => {
         }
 
         res.json({ success: true, message: 'Record deleted successfully' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+export const deletePurchasesAll = async (req, res) => {
+    try {
+        await Order.deleteMany({});
+        res.json({ success: true, message: 'All purchases deleted successfully' });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
