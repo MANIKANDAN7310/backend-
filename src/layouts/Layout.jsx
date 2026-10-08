@@ -14,7 +14,7 @@ const Layout = ({ children }) => {
       <Header toggleSidebar={toggleSidebar} />
       
       <main className="lg:pl-[var(--sidebar-width)] pt-[var(--header-height)] min-h-screen transition-all">
-        <div className="p-4 md:p-8 lg:p-10 max-w-7xl mx-auto w-full">
+        <div className="p-4 md:p-8 lg:p-10 w-[95%] max-w-[1800px] mx-auto">
           {children}
         </div>
       </main>

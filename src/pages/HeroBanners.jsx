@@ -17,18 +17,11 @@ import {
 import { API_URL as API } from '../config';
 import { fetchWithRetry } from '../utils/api';
 
-const SECTION_TYPES = [
-  { value: 'hero', label: 'Hero Banners' },
-  { value: 'collection', label: 'Collection Showcase' },
-  { value: 'category', label: 'Featured Categories' },
-  { value: 'promo', label: 'Promotional Image Cards' }
-];
-
 const HeroBanners = () => {
+  const getBannerType = (b) => b.sectionType || (['collection', 'category', 'promo'].includes(b.button2Link) ? b.button2Link : 'hero');
   const [banners, setBanners] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('hero');
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -43,6 +36,7 @@ const HeroBanners = () => {
     button1Text: '',
     button1Link: '',
     button2Text: '',
+    button2Link: '',
     image: null
   });
   const [imagePreview, setImagePreview] = useState(null);
@@ -87,14 +81,21 @@ const HeroBanners = () => {
   const openModal = (banner = null) => {
     if (banner) {
       setEditingBanner(banner);
+      
+      let b2Link = banner.button2Link;
+      if (['hero', 'collection', 'category', 'promo'].includes(b2Link)) {
+        b2Link = '';
+      }
+      
       setFormData({
-        sectionType: banner.button2Link || 'hero',
+        sectionType: 'hero',
         heading: banner.heading || '',
         subHeading: banner.subHeading || '',
         description: banner.description || '',
         button1Text: banner.button1Text || '',
         button1Link: banner.button1Link || '',
         button2Text: banner.button2Text || '',
+        button2Link: b2Link || '',
         image: null
       });
       const imgSrc = banner.image
@@ -104,13 +105,14 @@ const HeroBanners = () => {
     } else {
       setEditingBanner(null);
       setFormData({
-        sectionType: activeTab,
+        sectionType: 'hero',
         heading: '',
         subHeading: '',
         description: '',
         button1Text: '',
         button1Link: '',
         button2Text: '',
+        button2Link: '',
         image: null
       });
       setImagePreview(null);
@@ -134,16 +136,14 @@ const HeroBanners = () => {
       submitData.append('button1Text', formData.button1Text || '');
       submitData.append('button1Link', formData.button1Link || '');
       submitData.append('button2Text', formData.button2Text || '');
-      
-      // Save type inside button2Link
-      submitData.append('button2Link', formData.sectionType);
+      submitData.append('button2Link', formData.button2Link || '');
+      submitData.append('sectionType', 'hero');
       
       if (formData.image) {
         submitData.append('image', formData.image);
       }
       if (!editingBanner) {
-        // Count how many items in this specific section to get order
-        const sectionCount = banners.filter(b => (b.button2Link || 'hero') === formData.sectionType).length;
+        const sectionCount = banners.filter(b => getBannerType(b) === 'hero').length;
         submitData.append('order', sectionCount);
       } else {
         submitData.append('order', editingBanner.order || 0);
@@ -190,19 +190,15 @@ const HeroBanners = () => {
   };
 
   const handleSort = () => {
-    const sectionBanners = banners.filter(b => (b.button2Link || 'hero') === activeTab);
-    const otherBanners = banners.filter(b => (b.button2Link || 'hero') !== activeTab);
-
-    const reorderedSection = [...sectionBanners];
+    const reorderedSection = [...banners];
     const temp = reorderedSection[dragItem.current];
     reorderedSection[dragItem.current] = reorderedSection[draggedOverItem.current];
     reorderedSection[draggedOverItem.current] = temp;
 
     const updatedSection = reorderedSection.map((b, index) => ({ ...b, order: index }));
-    const combined = [...updatedSection, ...otherBanners];
     
-    setBanners(combined);
-    saveOrder(combined);
+    setBanners(updatedSection);
+    saveOrder(updatedSection);
   };
 
   const saveOrder = async (combinedBanners) => {
@@ -221,7 +217,7 @@ const HeroBanners = () => {
     }
   };
 
-  const filteredBanners = banners.filter(b => (b.button2Link || 'hero') === activeTab);
+  const filteredBanners = banners.filter(b => getBannerType(b) === 'hero');
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -231,32 +227,15 @@ const HeroBanners = () => {
           <h1 className="text-2xl font-bold bg-gradient-to-r from-violet-400 to-purple-400 bg-clip-text text-transparent">
             Store Layout & Banners
           </h1>
-          <p className="text-[var(--text-dim)]">Design the premium homepage layout with sections, banners, and showcases.</p>
+          <p className="text-[var(--text-dim)]">Design the premium homepage layout with hero banners.</p>
         </div>
         <button
           onClick={() => openModal()}
           className="bg-violet-500 hover:bg-violet-600 text-white px-4 py-2.5 rounded-xl flex items-center gap-2 transition-colors shadow-lg shadow-violet-500/25 font-semibold text-sm"
         >
           <Plus size={18} />
-          <span>Add Image to {SECTION_TYPES.find(t => t.value === activeTab)?.label}</span>
+          <span>Add Hero Banner</span>
         </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-px">
-        {SECTION_TYPES.map(tab => (
-          <button
-            key={tab.value}
-            onClick={() => setActiveTab(tab.value)}
-            className={`px-4 py-2.5 text-sm font-semibold rounded-t-xl transition-all border-b-2 -mb-px ${
-              activeTab === tab.value
-                ? 'border-violet-500 text-white bg-white/5'
-                : 'border-transparent text-slate-400 hover:text-white hover:bg-white/[0.02]'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
       </div>
 
       {loading ? (
@@ -274,7 +253,7 @@ const HeroBanners = () => {
           </div>
           <h3 className="text-lg font-medium text-white mb-2">No items found</h3>
           <p className="text-[var(--text-dim)] mb-6 max-w-md">
-            You haven't uploaded any images for the <strong>{SECTION_TYPES.find(t => t.value === activeTab)?.label}</strong> section yet.
+            You haven't uploaded any images for the Hero Banners yet.
           </p>
           <button
             onClick={() => openModal()}
@@ -326,7 +305,7 @@ const HeroBanners = () => {
                 <div className="flex-1 w-full space-y-1.5">
                   <div className="flex items-center gap-2">
                     <span className="px-2 py-0.5 text-[10px] font-black tracking-wider uppercase rounded bg-violet-500/10 text-violet-400 border border-violet-500/20">
-                      {activeTab}
+                      {banner.sectionType || (['collection', 'category', 'promo'].includes(banner.button2Link) ? banner.button2Link : 'hero')}
                     </span>
                     <h3 className="font-semibold text-lg text-white truncate">{banner.heading || '(Untitled Item)'}</h3>
                   </div>
@@ -347,6 +326,16 @@ const HeroBanners = () => {
                     {banner.button1Text && (
                       <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-850 text-slate-400 border border-slate-750">
                         Button: {banner.button1Text}
+                      </span>
+                    )}
+                    {banner.button2Text && (
+                      <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-850 text-slate-450 border border-slate-750">
+                        Badge/Secondary: {banner.button2Text}
+                      </span>
+                    )}
+                    {banner.button2Link && !['hero', 'collection', 'category', 'promo'].includes(banner.button2Link) && (
+                      <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-800 text-slate-350 border border-slate-700">
+                        Sec Link: {banner.button2Link}
                       </span>
                     )}
                   </div>
@@ -395,18 +384,6 @@ const HeroBanners = () => {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 {/* Left Column - Image Upload */}
                 <div className="space-y-4">
-                  <label className="block text-sm font-semibold text-slate-300">Layout Section Type</label>
-                  <select
-                    name="sectionType"
-                    value={formData.sectionType}
-                    onChange={handleInputChange}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all font-semibold"
-                  >
-                    {SECTION_TYPES.map(t => (
-                      <option key={t.value} value={t.value}>{t.label}</option>
-                    ))}
-                  </select>
-
                   <label className="block text-sm font-semibold text-slate-300">Featured Image</label>
                   <div className="relative group rounded-2xl border-2 border-dashed border-slate-800 bg-slate-905 hover:bg-slate-900 hover:border-violet-500/40 transition-all text-center overflow-hidden flex items-center justify-center"
                     style={{ aspectRatio: '16/9' }}>
@@ -443,58 +420,44 @@ const HeroBanners = () => {
                   </div>
                 </div>
 
-                {/* Right Column - Text Data based on Tab */}
+                {/* Right Column - Text Data */}
                 <div className="space-y-4">
-                  {/* Dynamic Labels based on Type */}
                   <div>
-                    <label className="block text-sm font-semibold text-slate-300 mb-1">
-                      {formData.sectionType === 'hero' && 'Heading (Title)'}
-                      {formData.sectionType === 'collection' && 'Collection Name'}
-                      {formData.sectionType === 'category' && 'Category Name'}
-                      {formData.sectionType === 'promo' && 'Card Title'}
-                    </label>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Heading (Title)</label>
                     <input
                       type="text"
                       name="heading"
                       value={formData.heading}
                       onChange={handleInputChange}
                       required
-                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all"
-                      placeholder="e.g. Luxury Enamel Pins"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-white placeholder-slate-650 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all"
+                      placeholder="e.g. Naruto Embroidery"
                     />
                   </div>
 
-                  {formData.sectionType !== 'category' && (
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-300 mb-1">
-                        {formData.sectionType === 'hero' && 'Subheading (Brief Tagline)'}
-                        {formData.sectionType === 'collection' && 'Collection Subtitle'}
-                        {formData.sectionType === 'promo' && 'Promotional Text / Value'}
-                      </label>
-                      <input
-                        type="text"
-                        name="subHeading"
-                        value={formData.subHeading}
-                        onChange={handleInputChange}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all"
-                        placeholder="e.g. Limited Premium Drop"
-                      />
-                    </div>
-                  )}
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Subheading (Brief Tagline)</label>
+                    <input
+                      type="text"
+                      name="subHeading"
+                      value={formData.subHeading}
+                      onChange={handleInputChange}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-white placeholder-slate-650 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all"
+                      placeholder="e.g. Naruto and Kurama"
+                    />
+                  </div>
 
-                  {formData.sectionType === 'hero' && (
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-300 mb-1">Banner Description</label>
-                      <textarea
-                        name="description"
-                        value={formData.description}
-                        onChange={handleInputChange}
-                        rows="3"
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all resize-none"
-                        placeholder="Detail the banner information..."
-                      ></textarea>
-                    </div>
-                  )}
+                  <div>
+                    <label className="block text-sm font-semibold text-slate-300 mb-1">Banner Description</label>
+                    <textarea
+                      name="description"
+                      value={formData.description}
+                      onChange={handleInputChange}
+                      rows="3"
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 text-white placeholder-slate-650 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all resize-none"
+                      placeholder="Detail the banner information..."
+                    ></textarea>
+                  </div>
 
                   {/* Actions Links */}
                   <div className="grid grid-cols-2 gap-4">
@@ -523,16 +486,29 @@ const HeroBanners = () => {
                   </div>
 
                   {formData.sectionType === 'hero' && (
-                    <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Optional Badge/Secondary Tag</label>
-                      <input
-                        type="text"
-                        name="button2Text"
-                        value={formData.button2Text}
-                        onChange={handleInputChange}
-                        className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-650 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
-                        placeholder="e.g. NEW RELEASE"
-                      />
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Optional Badge/Secondary Tag</label>
+                        <input
+                          type="text"
+                          name="button2Text"
+                          value={formData.button2Text}
+                          onChange={handleInputChange}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-650 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                          placeholder="e.g. Add to Cart"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Secondary Link (URL)</label>
+                        <input
+                          type="text"
+                          name="button2Link"
+                          value={formData.button2Link}
+                          onChange={handleInputChange}
+                          className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                          placeholder="e.g. /cart"
+                        />
+                      </div>
                     </div>
                   )}
                 </div>

@@ -17,6 +17,13 @@ import CustomOrders from './pages/CustomOrders';
 import ContactMails from './pages/ContactMails';
 import ProductAnalytics from './pages/ProductAnalytics';
 import Clients from './pages/Clients';
+import Invoice from './pages/Invoice';
+import EmailTrackMain from './pages/EmailTrack/EmailTrackMain';
+import EmailTrackCampaigns from './pages/EmailTrack/EmailTrackCampaigns';
+import EmailTrackFollowUp from './pages/EmailTrack/EmailTrackFollowUp';
+import EmailTrackB2BClients from './pages/EmailTrack/EmailTrackB2BClients';
+import EmailTrackLeads from './pages/EmailTrack/EmailTrackLeads';
+import EmailTrackAnalytics from './pages/EmailTrack/EmailTrackAnalytics';
 
 const BACKEND_URL = import.meta.env.VITE_API_URL || 'https://octoink-backend.onrender.com';
 
@@ -53,7 +60,22 @@ function App() {
                 <Route path="/upload" element={<UploadProduct />} />
                 <Route path="/hero-banners" element={<HeroBanners />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/invoice" element={<Invoice />} />
+
+                {/* Email Track Module Routes */}
+                <Route path="/email-track" element={<EmailTrackMain />} />
+                <Route path="/email-track/campaigns" element={<EmailTrackCampaigns />} />
+                <Route path="/email-track/history" element={<EmailTrackCampaigns />} />
+                <Route path="/email-track/follow-up" element={<EmailTrackFollowUp />} />
+                <Route path="/email-track/b2b-clients" element={<EmailTrackB2BClients />} />
+                <Route path="/email-track/leads" element={<EmailTrackLeads />} />
+                <Route path="/email-track/analytics" element={<EmailTrackAnalytics />} />
+
+                {/* Redirect old Email Outreach routes */}
+                <Route path="/email-outreach*" element={<Navigate to="/email-track" replace />} />
+
                 <Route path="*" element={<Navigate to="/" replace />} />
+
               </Route>
             </Route>
 

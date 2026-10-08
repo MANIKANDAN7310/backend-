@@ -13,7 +13,7 @@ export const AuthProvider = ({ children }) => {
 
   const login = (username, password) => {
     // Basic mock authentication
-    if (username === 'octoink' && password === 'octoink@123') {
+    if (username === 'octoink' && password === 'octoink@8680817360') {
       const userData = { name: 'Octoink Studios', role: 'Super Admin' };
       setIsAuthenticated(true);
       setUser(userData);

@@ -12,6 +12,9 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import Razorpay from "razorpay";
 import crypto from "crypto";
+import imapSimple from "imap-simple";
+import { simpleParser } from "mailparser";
+
 
 // Forcing Google DNS to resolve MongoDB and Gmail hostnames more reliably
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
@@ -19,14 +22,26 @@ dns.setServers(["8.8.8.8", "1.1.1.1"]);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config({ path: path.join(__dirname, ".env") });
+const rootEnvPath = path.join(__dirname, "../.env");
+const srcEnvPath = path.join(__dirname, ".env");
+if (fs.existsSync(rootEnvPath)) {
+    dotenv.config({ path: rootEnvPath });
+} else {
+    dotenv.config({ path: srcEnvPath });
+}
 
 const app = express();
 const PORT = process.env.PORT || 4999;
 
 app.use(cors());
 app.use(express.json());
-app.use("/uploads/images", cors(), express.static(path.join(__dirname, "uploads/images")));
+app.use("/uploads/images", cors(), express.static(path.join(__dirname, "uploads/images"), {
+    maxAge: '7d',
+    immutable: true,
+    setHeaders: (res) => {
+        res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    }
+}));
 app.use("/uploads/files", cors(), express.static(path.join(__dirname, "uploads/files"), {
     setHeaders: (res) => {
         res.setHeader('Content-Disposition', 'attachment');
@@ -35,12 +50,12 @@ app.use("/uploads/files", cors(), express.static(path.join(__dirname, "uploads/f
 
 // ── Razorpay Instance ─────────────────────────────────────
 const razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET,
+    key_id: process.env.RAZORPAY_KEY_ID || "rzp_test_dummy_key_id",
+    key_secret: process.env.RAZORPAY_KEY_SECRET || "dummy_key_secret",
 });
 
 // ── MongoDB ───────────────────────────────────────────────
-mongoose.connect(process.env.MONGO_URI)
+mongoose.connect(process.env.MONGO_URI || process.env.MONGODB_URI)
     .then(() => console.log("✅ MongoDB Connected"))
     .catch(err => console.log("❌ MongoDB Error:", err));
 
@@ -186,6 +201,173 @@ const settingsSchema = new mongoose.Schema({
     updatedAt: { type: Date, default: Date.now },
 });
 const Settings = mongoose.model("Settings", settingsSchema);
+
+// ── Email Outreach Schemas ───────────────────────────────
+const emailClientSchema = new mongoose.Schema({
+    email: { type: String, required: true },
+    name: { type: String },
+    company: { type: String },
+    service: { type: String },
+    status: { type: String, enum: ['Pending', 'Sending', 'Sent', 'Failed', 'Opened', 'Clicked', 'Replied', 'Unsubscribed', 'Already Sent', 'Already Contacted', 'New', 'Contacted'], default: 'Pending' },
+    lastEmailSent: { type: Date },
+    opened: { type: Boolean, default: false },
+    clicked: { type: Boolean, default: false },
+    replied: { type: Boolean, default: false },
+    nextFollowUp: { type: Date },
+    campaignId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmailCampaign' },
+    error: { type: String },
+    retryCount: { type: Number, default: 0 },
+    followUpStatus: { type: String, enum: ['active', 'stopped', 'Stopped — Replied'], default: 'active' },
+    sortOrder: { type: Number },
+    createdAt: { type: Date, default: Date.now },
+    sentFrom: { type: String }
+});
+emailClientSchema.index({ campaignId: 1, email: 1 }, { unique: true });
+const EmailClient = mongoose.model("EmailClient", emailClientSchema);
+// Programmatically drop old global index on email if it exists
+EmailClient.collection.dropIndex("email_1").catch(() => {});
+
+const emailCampaignSchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    subject: { type: String },
+    body: { type: String },
+    templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmailTemplate' },
+    recipients: [{ type: mongoose.Schema.Types.ObjectId, ref: 'EmailClient' }],
+    attachments: [{ type: String }],
+    scheduleType: { type: String, enum: ['Immediate', 'Scheduled'], default: 'Immediate' },
+    scheduledTime: { type: Date },
+    status: { type: String, enum: ['Draft', 'Scheduled', 'Running', 'Completed', 'Paused', 'Failed'], default: 'Draft' },
+    followUpSettings: [{
+        delayDays: { type: Number },
+        subject: { type: String },
+        body: { type: String }
+    }],
+    createdAt: { type: Date, default: Date.now }
+});
+const EmailCampaign = mongoose.model("EmailCampaign", emailCampaignSchema);
+
+const sentEmailSchema = new mongoose.Schema({
+    recipient: { type: String, required: true },
+    clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmailClient' },
+    campaignId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmailCampaign' },
+    subject: { type: String },
+    body: { type: String },
+    messageId: { type: String }, // For reply tracking
+    sentTime: { type: Date, default: Date.now },
+    deliveryStatus: { type: String, enum: ['Sent', 'Delivered', 'Bounced', 'Failed'], default: 'Sent' },
+    openStatus: { type: Boolean, default: false },
+    clickStatus: { type: Boolean, default: false },
+    replyStatus: { type: Boolean, default: false },
+    openedAt: { type: Date },
+    clickedAt: { type: Date },
+    repliedAt: { type: Date },
+    
+    // New fields for outbound email requirement
+    recipientEmail: { type: String },
+    recipientName: { type: String },
+    normalizedEmail: { type: String },
+    status: { type: String, enum: ['Pending', 'Sending', 'Sent', 'Failed', 'Opened', 'Clicked', 'Replied', 'Unsubscribed'], default: 'Pending' },
+    sentAt: { type: Date },
+    retryCount: { type: Number, default: 0 },
+    error: { type: String },
+    step: { type: Number, default: 0 }
+});
+sentEmailSchema.index({ campaignId: 1, normalizedEmail: 1, step: 1 }, { unique: true });
+const SentEmail = mongoose.model("SentEmail", sentEmailSchema);
+
+const emailEventSchema = new mongoose.Schema({
+    sentEmailId: { type: mongoose.Schema.Types.ObjectId, ref: 'SentEmail' },
+    eventType: { type: String, enum: ['Open', 'Click', 'Bounce', 'Delivery'] },
+    url: { type: String },
+    userAgent: { type: String },
+    ipAddress: { type: String },
+    timestamp: { type: Date, default: Date.now }
+});
+const EmailEvent = mongoose.model("EmailEvent", emailEventSchema);
+
+const emailReplySchema = new mongoose.Schema({
+    clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmailClient' },
+    campaignId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmailCampaign' },
+    sentEmailId: { type: mongoose.Schema.Types.ObjectId, ref: 'SentEmail' },
+    subject: { type: String },
+    body: { type: String },
+    sender: { type: String },
+    messageId: { type: String },
+    replyDate: { type: Date, default: Date.now },
+    isRead: { type: Boolean, default: false }
+});
+const EmailReply = mongoose.model("EmailReply", emailReplySchema);
+
+const emailFollowUpSchema = new mongoose.Schema({
+    clientId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmailClient' },
+    campaignId: { type: mongoose.Schema.Types.ObjectId, ref: 'EmailCampaign' },
+    step: { type: Number },
+    subject: { type: String },
+    body: { type: String },
+    sendAt: { type: Date },
+    status: { type: String, enum: ['Scheduled', 'Waiting', 'Sent', 'Paused', 'Cancelled', 'Stopped — Replied', 'Completed'], default: 'Scheduled' },
+    sentEmailId: { type: mongoose.Schema.Types.ObjectId, ref: 'SentEmail' },
+    createdAt: { type: Date, default: Date.now }
+});
+const EmailFollowUp = mongoose.model("EmailFollowUp", emailFollowUpSchema);
+
+const emailTemplateSchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    subject: { type: String },
+    body: { type: String },
+    createdAt: { type: Date, default: Date.now }
+});
+const EmailTemplate = mongoose.model("EmailTemplate", emailTemplateSchema);
+
+const emailSettingsSchema = new mongoose.Schema({
+    senderName: { type: String, default: 'Octoink Studios' },
+    senderEmail: { type: String, default: '' },
+    replyTo: { type: String, default: '' },
+    dailyLimit: { type: Number, default: 500 },
+    trackingEnabled: { type: Boolean, default: true },
+    defaultFollowUpDelay: { type: Number, default: 2 },
+    timezone: { type: String, default: 'Asia/Kolkata' },
+    sendingSchedule: {
+        days: [{ type: Number }], // 0-6 for Sunday-Saturday
+        startTime: { type: String, default: '09:00' },
+        endTime: { type: String, default: '18:00' }
+    }
+});
+const EmailSettings = mongoose.model("EmailSettings", emailSettingsSchema);
+
+const initializeDefaultTemplates = async () => {
+    try {
+        const outreachTemplate = await EmailTemplate.findOne({ name: "Default Outreach Template" });
+        if (!outreachTemplate) {
+            await new EmailTemplate({
+                name: "Default Outreach Template",
+                subject: "Hi {{name}}, checking in from Octoink Studios",
+                body: `<p>Hi {{name}},</p>\n<p>I hope you are doing well.</p>\n<p>We wanted to reach out regarding our embroidery services. Please let us know if you would be interested in learning more.</p>\n<p>Best regards,<br/>Octoink Studios</p>`
+            }).save();
+            console.log("Initialized Default Outreach Template");
+        }
+
+        const followupTemplate = await EmailTemplate.findOne({ name: "Default Follow-up Template" });
+        if (!followupTemplate) {
+            await new EmailTemplate({
+                name: "Default Follow-up Template",
+                subject: "Re: Checking in - Octoink Studios",
+                body: `<p>Hi {{name}},</p>\n<p>Just checking in to see if you had a chance to read my previous email.</p>\n<p>Would love to chat if you have a few minutes this week.</p>\n<p>Best regards,<br/>Octoink Studios</p>`
+            }).save();
+            console.log("Initialized Default Follow-up Template");
+        }
+    } catch (err) {
+        console.error("Error initializing default templates:", err);
+    }
+};
+
+mongoose.connection.on('connected', () => {
+    initializeDefaultTemplates();
+});
+if (mongoose.connection.readyState === 1) {
+    initializeDefaultTemplates();
+}
+
 
 // ── Middlewares ──────────────────────────────────────────
 const verifyToken = (req, res, next) => {
@@ -527,14 +709,32 @@ app.delete("/api/banners/:id", async (req, res) => {
 });
 
 // ── NODEMAILER ────────────────────────────────────────────
+const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER;
+const smtpPass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
+
 const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com", port: 587, secure: false,
-    auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    port: parseInt(process.env.SMTP_PORT) || 587,
+    secure: process.env.SMTP_SECURE === 'true' || false,
+    auth: {
+        user: smtpUser,
+        pass: smtpPass,
+    },
 });
 
+global.smtpConnectionStatus = 'Checking...';
+global.smtpError = null;
+
 transporter.verify((error) => {
-    if (error) console.log("❌ Nodemailer Error:", error);
-    else console.log("✅ Nodemailer Ready");
+    if (error) {
+        console.log("❌ Nodemailer Error:", error);
+        global.smtpConnectionStatus = 'Disconnected';
+        global.smtpError = error.message;
+    } else {
+        console.log("✅ Nodemailer Ready");
+        global.smtpConnectionStatus = 'Connected';
+        global.smtpError = null;
+    }
 });
 
 // ── CONTACT ROUTES ────────────────────────────────────────
@@ -1654,7 +1854,2232 @@ app.delete("/api/stats/entry/:type/:id", async (req, res) => {
     }
 });
 
+// ── EMAIL OUTREACH API ROUTES ────────────────────────────
+
+// Clients Endpoints
+app.get("/api/email-outreach/clients", async (req, res) => {
+    try {
+        const { range, startDate, endDate } = req.query;
+        let query = {};
+        if (range) {
+            const { start, end } = getDateRangeFilter(range, startDate, endDate);
+            if (start || end) {
+                query.lastEmailSent = {};
+                if (start) query.lastEmailSent.$gte = start;
+                if (end) query.lastEmailSent.$lte = end;
+            }
+        }
+        const clients = await EmailClient.find(query).sort({ createdAt: -1 });
+        res.json({ success: true, clients });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/clients", async (req, res) => {
+    try {
+        const { email, name, company, service } = req.body;
+        if (!email) return res.status(400).json({ success: false, message: "Email required" });
+        
+        let client = await EmailClient.findOne({ email: email.toLowerCase() });
+        if (client) {
+            return res.status(400).json({ success: false, message: "Client with this email already exists" });
+        }
+
+        client = new EmailClient({
+            email: email.toLowerCase(),
+            name,
+            company,
+            service,
+            status: 'Sent'
+        });
+        await client.save();
+        res.status(201).json({ success: true, client });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/import-clients", async (req, res) => {
+    try {
+        const { campaignId, campaignName, subject, body, templateId, attachments, followUpSettings, clients } = req.body;
+        
+        let campaign;
+        if (campaignId) {
+            campaign = await EmailCampaign.findById(campaignId);
+            if (!campaign) return res.status(404).json({ success: false, message: "Selected campaign not found" });
+            if (subject) campaign.subject = subject;
+            if (body) campaign.body = body;
+            await campaign.save();
+        } else {
+            if (!campaignName || !subject || !body) {
+                return res.status(400).json({ success: false, message: "Campaign Name, Subject and Body are required for new campaigns." });
+            }
+            campaign = new EmailCampaign({
+                name: campaignName,
+                subject,
+                body,
+                templateId: templateId || null,
+                attachments: attachments || [],
+                followUpSettings: followUpSettings || [],
+                status: 'Draft'
+            });
+            await campaign.save();
+        }
+
+        const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+        const emailsSeen = new Set();
+        let totalRows = 0;
+        let validEmailsCount = 0;
+        let invalidEmailsCount = 0;
+        let duplicateEmailsCount = 0;
+        let newLeadsCount = 0;
+        let alreadyContactedCount = 0;
+
+        if (clients && Array.isArray(clients)) {
+            totalRows = clients.length;
+            const recipientIds = [];
+            let sortOrder = 0;
+            
+            // Pre-fetch all contacted emails for this campaign
+            const contactedEmails = new Set();
+            const contacted = await SentEmail.find({
+                campaignId: campaign._id,
+                status: { $in: ['Sent', 'Opened', 'Clicked', 'Replied'] }
+            }).select('normalizedEmail');
+            contacted.forEach(s => {
+                if (s.normalizedEmail) contactedEmails.add(s.normalizedEmail.trim().toLowerCase());
+            });
+
+            const clientsContacted = await EmailClient.find({
+                campaignId: campaign._id,
+                status: { $in: ['Sent', 'Opened', 'Clicked', 'Replied', 'Already Contacted'] }
+            }).select('email');
+            clientsContacted.forEach(c => {
+                if (c.email) contactedEmails.add(c.email.trim().toLowerCase());
+            });
+
+            for (const c of clients) {
+                const emailRaw = c.email || '';
+                const emailClean = emailRaw.trim().toLowerCase().replace(/\s+/g, '');
+                const name = (c.name || '').trim();
+
+                if (!emailClean || !emailRegex.test(emailClean)) {
+                    invalidEmailsCount++;
+                    continue;
+                }
+
+                validEmailsCount++;
+
+                if (emailsSeen.has(emailClean)) {
+                    duplicateEmailsCount++;
+                    continue;
+                }
+                emailsSeen.add(emailClean);
+                
+                let client = await EmailClient.findOne({ campaignId: campaign._id, email: emailClean });
+                
+                if (client) {
+                    const isSuccess = ['Sent', 'Opened', 'Clicked', 'Replied', 'Already Contacted'].includes(client.status) || contactedEmails.has(emailClean);
+                    if (isSuccess) {
+                        client.status = 'Already Contacted';
+                        alreadyContactedCount++;
+                    } else {
+                        client.status = 'Pending';
+                        newLeadsCount++;
+                    }
+                    client.name = name || client.name || '';
+                    client.sortOrder = sortOrder++;
+                    await client.save();
+                    recipientIds.push(client._id);
+                } else {
+                    const hasContacted = contactedEmails.has(emailClean);
+                    const status = hasContacted ? 'Already Contacted' : 'Pending';
+                    
+                    if (hasContacted) {
+                        alreadyContactedCount++;
+                    } else {
+                        newLeadsCount++;
+                    }
+
+                    client = new EmailClient({
+                        email: emailClean,
+                        name: name || '',
+                        campaignId: campaign._id,
+                        status,
+                        sortOrder: sortOrder++
+                    });
+                    await client.save();
+                    recipientIds.push(client._id);
+                }
+            }
+            
+            const uniqueRecipients = Array.from(new Set([
+                ...(campaign.recipients || []).map(id => id.toString()),
+                ...recipientIds.map(id => id.toString())
+            ])).map(id => new mongoose.Types.ObjectId(id));
+            
+            campaign.recipients = uniqueRecipients;
+            await campaign.save();
+        }
+
+        res.json({ 
+            success: true, 
+            campaignId: campaign._id,
+            campaign,
+            summary: {
+                totalRows,
+                validEmails: validEmailsCount,
+                invalidEmails: invalidEmailsCount,
+                duplicateEmails: duplicateEmailsCount,
+                alreadyContacted: alreadyContactedCount,
+                newLeads: newLeadsCount
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.get("/api/email-outreach/sample-mail-text", async (req, res) => {
+    try {
+        const initial = await EmailTemplate.findOne({ name: "Default Outreach Template" });
+        const followup = await EmailTemplate.findOne({ name: "Default Follow-up Template" });
+        res.json({ success: true, initial, followup });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/sample-mail-text/save", async (req, res) => {
+    try {
+        const { type, subject, body } = req.body;
+        const name = type === 'initial' ? "Default Outreach Template" : "Default Follow-up Template";
+        let template = await EmailTemplate.findOne({ name });
+        if (!template) {
+            template = new EmailTemplate({ name, subject, body });
+        } else {
+            template.subject = subject;
+            template.body = body;
+        }
+        await template.save();
+        res.json({ success: true, message: "Saved successfully", template });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/follow-ups/start-sending", async (req, res) => {
+    try {
+        const fiveDaysAgo = new Date();
+        fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+
+        const eligibleClients = await EmailClient.find({
+            status: { $in: ['Sent', 'Opened', 'Clicked'] },
+            replied: { $ne: true },
+            followUpStatus: { $ne: 'Stopped — Replied' },
+            lastEmailSent: { $lte: fiveDaysAgo }
+        });
+
+        if (eligibleClients.length === 0) {
+            return res.json({ success: true, message: "No clients are currently eligible for follow-up (5 days after sent, no reply).", count: 0 });
+        }
+
+        const template = await EmailTemplate.findOne({ name: "Default Follow-up Template" });
+        if (!template) {
+            return res.status(400).json({ success: false, message: "Default Follow-up Template not found. Please configure it in Sample Mail Text." });
+        }
+
+        const settings = await EmailSettings.findOne() || await EmailSettings.create({});
+        const activeFromEmail = settings.senderEmail || process.env.SMTP_USER || process.env.EMAIL_USER || '';
+
+        let sentCount = 0;
+        for (const client of eligibleClients) {
+            const freshClient = await EmailClient.findById(client._id);
+            if (!freshClient || freshClient.replied === true || freshClient.status === 'Replied' || freshClient.followUpStatus === 'Stopped — Replied') {
+                continue;
+            }
+
+            const normalizedEmail = client.email.trim().toLowerCase();
+            const alreadySentFollowUp = await SentEmail.findOne({
+                campaignId: client.campaignId,
+                normalizedEmail,
+                step: 1
+            });
+            if (alreadySentFollowUp) {
+                continue;
+            }
+
+            let personalizedBody = template.body || '';
+            personalizedBody = personalizedBody.replace(/\{\{client_name\}\}/g, client.name || 'there');
+            personalizedBody = personalizedBody.replace(/\{\{name\}\}/g, client.name || 'there');
+            personalizedBody = personalizedBody.replace(/\{\{email\}\}/g, client.email || '');
+            personalizedBody = personalizedBody.replace(/\{\{company_name\}\}/g, client.company || 'your company');
+            personalizedBody = personalizedBody.replace(/\{\{company\}\}/g, client.company || 'your company');
+
+            let personalizedSubject = template.subject || '';
+            personalizedSubject = personalizedSubject.replace(/\{\{client_name\}\}/g, client.name || 'there');
+            personalizedSubject = personalizedSubject.replace(/\{\{name\}\}/g, client.name || 'there');
+            personalizedSubject = personalizedSubject.replace(/\{\{email\}\}/g, client.email || '');
+            personalizedSubject = personalizedSubject.replace(/\{\{company_name\}\}/g, client.company || 'your company');
+            personalizedSubject = personalizedSubject.replace(/\{\{company\}\}/g, client.company || 'your company');
+
+            const sentEmail = new SentEmail({
+                recipient: client.email,
+                clientId: client._id,
+                campaignId: client.campaignId,
+                subject: personalizedSubject,
+                body: personalizedBody,
+                recipientEmail: client.email,
+                recipientName: client.name || '',
+                normalizedEmail,
+                status: 'Sending',
+                sentAt: new Date(),
+                step: 1
+            });
+            await sentEmail.save();
+
+            let finalBody = personalizedBody;
+            if (settings.trackingEnabled) {
+                const openTrackingUrl = `${process.env.VITE_API_URL || 'http://localhost:4999'}/api/email-outreach/track/open/${sentEmail._id}`;
+                finalBody += `<img src="${openTrackingUrl}" width="1" height="1" style="display:none;" />`;
+            }
+
+            try {
+                const mailOptions = {
+                    from: `"${settings.senderName || 'Octoink Studios'} <${activeFromEmail}>"`,
+                    to: client.email,
+                    subject: personalizedSubject,
+                    html: finalBody
+                };
+
+                if (settings.replyTo || activeFromEmail) {
+                    mailOptions.replyTo = settings.replyTo || activeFromEmail;
+                }
+
+                const info = await transporter.sendMail(mailOptions);
+                
+                sentEmail.messageId = info.messageId;
+                sentEmail.status = 'Sent';
+                sentEmail.sentAt = new Date();
+                await sentEmail.save();
+
+                client.status = 'Sent';
+                client.lastEmailSent = new Date();
+                client.sentFrom = activeFromEmail;
+                await client.save();
+
+                sentCount++;
+            } catch (err) {
+                console.error(`[Follow-up manual send failed] ${client.email}:`, err.message);
+                sentEmail.status = 'Failed';
+                sentEmail.error = err.message;
+                await sentEmail.save();
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        res.json({ success: true, message: `Successfully sent ${sentCount} follow-up emails.`, count: sentCount });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.put("/api/email-outreach/clients/:id", async (req, res) => {
+    try {
+        const client = await EmailClient.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!client) return res.status(404).json({ success: false, message: "Client not found" });
+        res.json({ success: true, client });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.delete("/api/email-outreach/clients/:id", async (req, res) => {
+    try {
+        const client = await EmailClient.findByIdAndDelete(req.params.id);
+        if (!client) return res.status(404).json({ success: false, message: "Client not found" });
+        await EmailFollowUp.deleteMany({ clientId: req.params.id });
+        res.json({ success: true, message: "Client deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Endpoint to validate imported clients and check duplicates/already contacted status
+app.post("/api/email-outreach/validate-import", async (req, res) => {
+    try {
+        const { campaignId, clients } = req.body;
+        if (!clients || !Array.isArray(clients)) {
+            return res.status(400).json({ success: false, message: "Clients array required" });
+        }
+
+        const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+        const normalizedClients = [];
+        const emailsSeen = new Set();
+
+        let totalRows = clients.length;
+        let validEmailsCount = 0;
+        let invalidEmailsCount = 0;
+        let duplicateEmailsCount = 0;
+        let newLeadsCount = 0;
+        let alreadyContactedCount = 0;
+
+        // Fetch already contacted emails for this campaign if campaignId is provided
+        const contactedEmails = new Set();
+        if (campaignId && mongoose.Types.ObjectId.isValid(campaignId)) {
+            const contacted = await SentEmail.find({
+                campaignId,
+                status: { $in: ['Sent', 'Opened', 'Clicked', 'Replied'] }
+            }).select('normalizedEmail');
+            contacted.forEach(s => {
+                if (s.normalizedEmail) contactedEmails.add(s.normalizedEmail.trim().toLowerCase());
+            });
+
+            // Also check if any existing EmailClient has success status
+            const clientsContacted = await EmailClient.find({
+                campaignId,
+                status: { $in: ['Sent', 'Opened', 'Clicked', 'Replied'] }
+            }).select('email');
+            clientsContacted.forEach(c => {
+                if (c.email) contactedEmails.add(c.email.trim().toLowerCase());
+            });
+        }
+
+        for (const c of clients) {
+            const emailRaw = c.email || '';
+            const emailClean = emailRaw.trim().toLowerCase().replace(/\s+/g, '');
+            const name = (c.name || '').trim();
+
+            if (!emailClean) {
+                invalidEmailsCount++;
+                normalizedClients.push({ email: '(Empty)', name, status: 'Invalid', reason: 'Missing email address' });
+            } else if (!emailRegex.test(emailClean)) {
+                invalidEmailsCount++;
+                normalizedClients.push({ email: emailClean, name, status: 'Invalid', reason: 'Invalid email format' });
+            } else {
+                validEmailsCount++;
+                if (emailsSeen.has(emailClean)) {
+                    duplicateEmailsCount++;
+                    normalizedClients.push({ email: emailClean, name, status: 'Duplicate', reason: 'Duplicate in file' });
+                } else {
+                    emailsSeen.add(emailClean);
+                    if (contactedEmails.has(emailClean)) {
+                        alreadyContactedCount++;
+                        normalizedClients.push({ email: emailClean, name, status: 'Already Contacted' });
+                    } else {
+                        newLeadsCount++;
+                        normalizedClients.push({ email: emailClean, name, status: 'New' });
+                    }
+                }
+            }
+        }
+
+        res.json({
+            success: true,
+            summary: {
+                totalRows,
+                validEmails: validEmailsCount,
+                invalidEmails: invalidEmailsCount,
+                duplicateEmails: duplicateEmailsCount,
+                newLeads: newLeadsCount,
+                alreadyContacted: alreadyContactedCount
+            },
+            clients: normalizedClients
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Endpoint to fetch leads with engagement score and status
+app.get("/api/email-outreach/leads", async (req, res) => {
+    try {
+        const { range, startDate, endDate, status, campaignId, search } = req.query;
+        let matchQuery = {};
+
+        // Apply date filter based on lastEmailSent if specified
+        if (range) {
+            const { start, end } = getDateRangeFilter(range, startDate, endDate);
+            if (start || end) {
+                matchQuery.lastEmailSent = {};
+                if (start) matchQuery.lastEmailSent.$gte = start;
+                if (end) matchQuery.lastEmailSent.$lte = end;
+            }
+        }
+
+        // Apply status filter
+        if (status && status !== 'All Leads' && status !== 'All Status') {
+            matchQuery.status = status;
+        }
+
+        // Apply campaign filter
+        if (campaignId && campaignId !== 'All Campaigns') {
+            matchQuery.campaignId = new mongoose.Types.ObjectId(campaignId);
+        }
+
+        // Apply search filter (name, email)
+        if (search) {
+            matchQuery.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        const clients = await EmailClient.find(matchQuery).populate('campaignId').sort({ createdAt: -1 });
+        const clientIds = clients.map(c => c._id);
+
+        const sentEmails = await SentEmail.find({ clientId: { $in: clientIds } }).select('_id clientId');
+        const clientToSentEmailsMap = {};
+        const sentEmailIds = [];
+        sentEmails.forEach(se => {
+            sentEmailIds.push(se._id);
+            if (!clientToSentEmailsMap[se.clientId]) {
+                clientToSentEmailsMap[se.clientId] = [];
+            }
+            clientToSentEmailsMap[se.clientId].push(se._id.toString());
+        });
+
+        const eventCounts = await EmailEvent.aggregate([
+            { $match: { sentEmailId: { $in: sentEmailIds } } },
+            { $group: { _id: { sentEmailId: "$sentEmailId", type: "$eventType" }, count: { $sum: 1 } } }
+        ]);
+
+        const emailEventMap = {};
+        eventCounts.forEach(ec => {
+            const semailId = ec._id.sentEmailId.toString();
+            if (!emailEventMap[semailId]) {
+                emailEventMap[semailId] = { Open: 0, Click: 0 };
+            }
+            emailEventMap[semailId][ec._id.type] = ec.count;
+        });
+
+        const leads = clients.map(client => {
+            let score = 0;
+            if (client.replied) score += 40;
+            if (client.clicked) score += 20;
+            if (client.opened) score += 10;
+
+            let totalOpens = 0;
+            let totalClicks = 0;
+            const relatedSentEmails = clientToSentEmailsMap[client._id.toString()] || [];
+            relatedSentEmails.forEach(seId => {
+                const counts = emailEventMap[seId] || { Open: 0, Click: 0 };
+                totalOpens += counts.Open || 0;
+                totalClicks += counts.Click || 0;
+            });
+
+            if (totalOpens > 1) {
+                score += (totalOpens - 1) * 5;
+            }
+            if (totalClicks > 1) {
+                score += (totalClicks - 1) * 10;
+            }
+
+            let label = "Cold Lead";
+            if (score >= 50) label = "Hot Lead";
+            else if (score >= 15) label = "Warm Lead";
+
+            return {
+                ...client.toObject(),
+                leadScore: score,
+                leadScoreLabel: label,
+                totalOpens,
+                totalClicks
+            };
+        });
+
+        res.json({ success: true, leads });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Live activity chronological feed
+app.get("/api/email-outreach/activity", async (req, res) => {
+    try {
+        const { limit = 20 } = req.query;
+        const lim = parseInt(limit);
+
+        const sentEmails = await SentEmail.find()
+            .populate('clientId')
+            .sort({ sentTime: -1 })
+            .limit(lim);
+
+        const events = await EmailEvent.find()
+            .populate({
+                path: 'sentEmailId',
+                populate: { path: 'clientId' }
+            })
+            .sort({ timestamp: -1 })
+            .limit(lim);
+
+        const replies = await EmailReply.find()
+            .populate('clientId')
+            .sort({ replyDate: -1 })
+            .limit(lim);
+
+        const createdFollowUps = await EmailFollowUp.find()
+            .populate('clientId')
+            .sort({ createdAt: -1 })
+            .limit(lim);
+
+        const activities = [];
+
+        sentEmails.forEach(se => {
+            if (se.clientId) {
+                activities.push({
+                    type: 'sent',
+                    timestamp: se.sentTime,
+                    message: `Email sent to ${se.clientId.name || se.recipient}`,
+                    recipient: se.clientId.name || se.recipient,
+                    email: se.recipient,
+                    details: se.subject
+                });
+            }
+        });
+
+        events.forEach(ev => {
+            if (ev.sentEmailId && ev.sentEmailId.clientId) {
+                const clientName = ev.sentEmailId.clientId.name || ev.sentEmailId.recipient;
+                let message = '';
+                if (ev.eventType === 'Open') {
+                    message = `Email opened by ${clientName}`;
+                } else if (ev.eventType === 'Click') {
+                    message = `Link clicked by ${clientName}`;
+                } else if (ev.eventType === 'Bounce') {
+                    message = `Email bounced for ${clientName}`;
+                } else if (ev.eventType === 'Delivery') {
+                    message = `Email delivered to ${clientName}`;
+                }
+                activities.push({
+                    type: ev.eventType.toLowerCase(),
+                    timestamp: ev.timestamp,
+                    message,
+                    recipient: clientName,
+                    email: ev.sentEmailId.recipient,
+                    details: ev.url || ev.sentEmailId.subject
+                });
+            }
+        });
+
+        replies.forEach(r => {
+            const clientName = r.clientId ? r.clientId.name : r.sender.split('@')[0];
+            activities.push({
+                type: 'reply',
+                timestamp: r.replyDate,
+                message: `Reply received from ${clientName}`,
+                recipient: clientName,
+                email: r.sender,
+                details: r.subject
+            });
+        });
+
+        createdFollowUps.forEach(fu => {
+            if (fu.clientId) {
+                activities.push({
+                    type: 'followup_scheduled',
+                    timestamp: fu.createdAt,
+                    message: `Follow-up scheduled for ${fu.clientId.name || fu.clientId.email}`,
+                    recipient: fu.clientId.name || fu.clientId.email,
+                    email: fu.clientId.email,
+                    details: `Step ${fu.step}: ${fu.subject}`
+                });
+            }
+        });
+
+        activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+        res.json({
+            success: true,
+            activities: activities.slice(0, lim)
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Campaigns Endpoints
+app.get("/api/email-outreach/campaigns", async (req, res) => {
+    try {
+        const campaigns = await EmailCampaign.find().sort({ createdAt: -1 });
+        res.json({ success: true, campaigns });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/upload", upload.array("attachments"), (req, res) => {
+    try {
+        const filePaths = (req.files || []).map(f => "uploads/files/" + f.filename);
+        res.json({ success: true, filePaths });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+
+app.post("/api/email-outreach/campaigns", async (req, res) => {
+    try {
+        const { name, subject, body, templateId, recipients, attachments, scheduleType, scheduledTime, followUpSettings } = req.body;
+        if (!name || !subject || !body) {
+            return res.status(400).json({ success: false, message: "Campaign Name, Subject and Body are required." });
+        }
+
+        const campaign = new EmailCampaign({
+            name,
+            subject,
+            body,
+            templateId,
+            recipients,
+            attachments,
+            scheduleType,
+            scheduledTime,
+            followUpSettings,
+            status: scheduleType === 'Scheduled' ? 'Scheduled' : 'Draft'
+        });
+        await campaign.save();
+
+        if (scheduleType === 'Immediate') {
+            campaign.status = 'Running';
+            await campaign.save();
+            runCampaignQueue(campaign._id);
+        }
+
+        res.status(201).json({ success: true, campaign });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/campaigns/start-flow", async (req, res) => {
+    try {
+        const { campaignId, campaignName, subject, body, templateId, attachments, followUpSettings, clients } = req.body;
+        
+        let campaign;
+        if (campaignId) {
+            campaign = await EmailCampaign.findById(campaignId);
+            if (!campaign) return res.status(404).json({ success: false, message: "Selected campaign not found" });
+            campaign.status = 'Running';
+            if (subject) campaign.subject = subject;
+            if (body) campaign.body = body;
+            await campaign.save();
+        } else {
+            if (!campaignName || !subject || !body) {
+                return res.status(400).json({ success: false, message: "Campaign Name, Subject and Body are required for new campaigns." });
+            }
+            campaign = new EmailCampaign({
+                name: campaignName,
+                subject,
+                body,
+                templateId: templateId || null,
+                attachments: attachments || [],
+                followUpSettings: followUpSettings || [],
+                status: 'Running'
+            });
+            await campaign.save();
+        }
+
+        if (clients && Array.isArray(clients)) {
+            const recipientIds = [];
+            let sortOrder = 0;
+            
+            for (const c of clients) {
+                if (!c.email) continue;
+                const emailClean = c.email.trim().toLowerCase();
+                
+                // Check if client already exists in this campaign
+                let client = await EmailClient.findOne({ campaignId: campaign._id, email: emailClean });
+                
+                if (client) {
+                    const isSuccess = ['Sent', 'Opened', 'Clicked', 'Replied'].includes(client.status);
+                    if (!isSuccess) {
+                        client.status = 'Pending';
+                        client.name = c.name || client.name || '';
+                        client.sortOrder = sortOrder++;
+                        await client.save();
+                    }
+                    recipientIds.push(client._id);
+                } else {
+                    const alreadySent = await SentEmail.findOne({
+                        campaignId: campaign._id,
+                        normalizedEmail: emailClean,
+                        status: { $in: ['Sent', 'Opened', 'Clicked', 'Replied'] },
+                        step: 0
+                    });
+                    
+                    const status = alreadySent ? 'Already Sent' : 'Pending';
+                    
+                    client = new EmailClient({
+                        email: emailClean,
+                        name: c.name || '',
+                        campaignId: campaign._id,
+                        status,
+                        sortOrder: sortOrder++
+                    });
+                    await client.save();
+                    recipientIds.push(client._id);
+                }
+            }
+            
+            const uniqueRecipients = Array.from(new Set([
+                ...(campaign.recipients || []).map(id => id.toString()),
+                ...recipientIds.map(id => id.toString())
+            ])).map(id => new mongoose.Types.ObjectId(id));
+            
+            campaign.recipients = uniqueRecipients;
+            await campaign.save();
+        }
+
+        runCampaignQueue(campaign._id);
+
+        res.json({ success: true, campaign });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/campaigns/:id/start-sending", async (req, res) => {
+    try {
+        const campaign = await EmailCampaign.findById(req.params.id);
+        if (!campaign) return res.status(404).json({ success: false, message: "Campaign not found" });
+
+        campaign.status = 'Running';
+        await campaign.save();
+
+        runCampaignQueue(campaign._id);
+
+        res.json({ success: true, campaign, message: "Campaign queue sending started" });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.get("/api/email-outreach/campaigns/:id/progress", async (req, res) => {
+    try {
+        const campaign = await EmailCampaign.findById(req.params.id);
+        if (!campaign) return res.status(404).json({ success: false, message: "Campaign not found" });
+        
+        const total = await EmailClient.countDocuments({ campaignId: campaign._id });
+        const pending = await EmailClient.countDocuments({ campaignId: campaign._id, status: 'Pending' });
+        const sending = await EmailClient.countDocuments({ campaignId: campaign._id, status: 'Sending' });
+        const sent = await EmailClient.countDocuments({ campaignId: campaign._id, status: { $in: ['Sent', 'Opened', 'Clicked', 'Replied'] } });
+        const failed = await EmailClient.countDocuments({ campaignId: campaign._id, status: 'Failed' });
+        const alreadySent = await EmailClient.countDocuments({ campaignId: campaign._id, status: 'Already Sent' });
+        
+        const currentClient = await EmailClient.findOne({ campaignId: campaign._id, status: 'Sending' })
+            || await EmailClient.findOne({ campaignId: campaign._id, status: 'Pending' }).sort({ sortOrder: 1 });
+            
+        res.json({
+            success: true,
+            progress: {
+                campaignId: campaign._id,
+                name: campaign.name,
+                status: campaign.status,
+                total,
+                pending,
+                sending,
+                sent,
+                failed,
+                alreadySent,
+                currentClient: currentClient ? {
+                    name: currentClient.name,
+                    email: currentClient.email,
+                    status: currentClient.status
+                } : null
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/campaigns/:id/retry-failed", async (req, res) => {
+    try {
+        const campaign = await EmailCampaign.findById(req.params.id);
+        if (!campaign) return res.status(404).json({ success: false, message: "Campaign not found" });
+        
+        await EmailClient.updateMany(
+            { campaignId: campaign._id, status: 'Failed' },
+            { $set: { status: 'Pending', error: null } }
+        );
+        
+        campaign.status = 'Running';
+        await campaign.save();
+        
+        runCampaignQueue(campaign._id);
+        
+        res.json({ success: true, message: "Failed clients reset to Pending and campaign resumed." });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/campaigns/:id/send", async (req, res) => {
+    try {
+        const campaign = await EmailCampaign.findById(req.params.id);
+        if (!campaign) return res.status(404).json({ success: false, message: "Campaign not found" });
+
+        campaign.status = 'Running';
+        await campaign.save();
+
+        runCampaignQueue(campaign._id);
+
+        res.json({ success: true, message: "Campaign sending triggered" });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/campaigns/:id/pause", async (req, res) => {
+    try {
+        const campaign = await EmailCampaign.findByIdAndUpdate(req.params.id, { status: 'Paused' }, { new: true });
+        if (!campaign) return res.status(404).json({ success: false, message: "Campaign not found" });
+        
+        const controller = activeCampaignRuns.get(req.params.id);
+        if (controller) {
+            controller.abort();
+        }
+        
+        await EmailFollowUp.updateMany({ campaignId: req.params.id, status: 'Scheduled' }, { $set: { status: 'Paused' } });
+        res.json({ success: true, campaign });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/campaigns/:id/resume", async (req, res) => {
+    try {
+        const campaign = await EmailCampaign.findByIdAndUpdate(req.params.id, { status: 'Running' }, { new: true });
+        if (!campaign) return res.status(404).json({ success: false, message: "Campaign not found" });
+        
+        await EmailFollowUp.updateMany({ campaignId: req.params.id, status: 'Paused' }, { $set: { status: 'Scheduled' } });
+        
+        runCampaignQueue(campaign._id);
+        
+        res.json({ success: true, campaign });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/campaigns/:id/cancel", async (req, res) => {
+    try {
+        const campaign = await EmailCampaign.findByIdAndUpdate(req.params.id, { status: 'Failed' }, { new: true });
+        if (!campaign) return res.status(404).json({ success: false, message: "Campaign not found" });
+        
+        const controller = activeCampaignRuns.get(req.params.id);
+        if (controller) {
+            controller.abort();
+        }
+        
+        await EmailFollowUp.updateMany({ campaignId: req.params.id, status: { $in: ['Scheduled', 'Paused', 'Waiting'] } }, { $set: { status: 'Cancelled' } });
+        res.json({ success: true, campaign });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Templates Endpoints
+app.get("/api/email-outreach/templates", async (req, res) => {
+    try {
+        const templates = await EmailTemplate.find().sort({ createdAt: -1 });
+        res.json({ success: true, templates });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/templates", async (req, res) => {
+    try {
+        const template = new EmailTemplate(req.body);
+        await template.save();
+        res.status(201).json({ success: true, template });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.put("/api/email-outreach/templates/:id", async (req, res) => {
+    try {
+        const template = await EmailTemplate.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!template) return res.status(404).json({ success: false, message: "Template not found" });
+        res.json({ success: true, template });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.delete("/api/email-outreach/templates/:id", async (req, res) => {
+    try {
+        const template = await EmailTemplate.findById(req.params.id);
+        if (!template) return res.status(404).json({ success: false, message: "Template not found" });
+        if (template.name === "Default Outreach Template" || template.name === "Default Follow-up Template") {
+            return res.status(400).json({ success: false, message: "Default templates cannot be deleted" });
+        }
+        await EmailTemplate.findByIdAndDelete(req.params.id);
+        res.json({ success: true, message: "Template deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Replies Endpoints
+app.get("/api/email-outreach/replies", async (req, res) => {
+    try {
+        const replies = await EmailReply.find().populate('clientId').populate('campaignId').sort({ replyDate: -1 });
+        res.json({ success: true, replies });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.get("/api/email-outreach/replies/:clientId", async (req, res) => {
+    try {
+        const { clientId } = req.params;
+        let client = null;
+        let email = '';
+
+        if (mongoose.Types.ObjectId.isValid(clientId)) {
+            client = await EmailClient.findById(clientId);
+            if (client) {
+                email = client.email.trim().toLowerCase();
+            } else {
+                // Try to find a SentEmail or EmailReply with this clientId to get the email
+                const sampleReply = await EmailReply.findOne({ clientId }) || 
+                                    await SentEmail.findOne({ clientId });
+                if (sampleReply) {
+                    email = (sampleReply.sender || sampleReply.recipient || '').trim().toLowerCase();
+                }
+            }
+        } else {
+            email = clientId.replace('fallback-', '').trim().toLowerCase();
+            client = await EmailClient.findOne({ email });
+        }
+
+        if (!email && clientId.includes('@')) {
+            email = clientId.trim().toLowerCase();
+        }
+
+        if (!email) {
+            return res.status(404).json({ success: false, message: "Could not resolve client email address" });
+        }
+
+        if (!client) {
+            client = {
+                _id: clientId,
+                email,
+                name: email.split('@')[0],
+                status: 'Replied',
+                replied: true,
+                leadScore: 40,
+                leadScoreLabel: 'Warm Lead'
+            };
+        }
+
+        const sentEmails = await SentEmail.find({
+            $or: [
+                { clientId: client._id },
+                { recipient: email },
+                { normalizedEmail: email }
+            ]
+        }).sort({ sentTime: 1 });
+
+        const replies = await EmailReply.find({
+            $or: [
+                { clientId: client._id },
+                { sender: email }
+            ]
+        }).sort({ replyDate: 1 });
+
+        const thread = [];
+        const seenMessageIds = new Set();
+
+        sentEmails.forEach(e => {
+            const key = e.messageId || `sent-${e.sentTime?.getTime()}`;
+            if (!seenMessageIds.has(key)) {
+                seenMessageIds.add(key);
+                thread.push({
+                    type: 'outbound',
+                    id: e._id,
+                    subject: e.subject,
+                    body: e.body,
+                    date: e.sentTime || e.sentAt,
+                    status: e.deliveryStatus || e.status
+                });
+            }
+        });
+
+        replies.forEach(r => {
+            const key = r.messageId || `reply-${r.replyDate?.getTime()}`;
+            if (!seenMessageIds.has(key)) {
+                seenMessageIds.add(key);
+                thread.push({
+                    type: 'inbound',
+                    id: r._id,
+                    subject: r.subject,
+                    body: r.body,
+                    date: r.replyDate,
+                    sender: r.sender
+                });
+            }
+        });
+
+        thread.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        res.json({ success: true, client, thread });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/replies/:clientId/send", async (req, res) => {
+    try {
+        const { clientId } = req.params;
+        const { subject, body } = req.body;
+        if (!subject || !body) return res.status(400).json({ success: false, message: "Subject and Body required" });
+
+        let client = null;
+        let email = '';
+
+        if (mongoose.Types.ObjectId.isValid(clientId)) {
+            client = await EmailClient.findById(clientId);
+            if (client) {
+                email = client.email.trim().toLowerCase();
+            } else {
+                const sampleReply = await EmailReply.findOne({ clientId }) || 
+                                    await SentEmail.findOne({ clientId });
+                if (sampleReply) {
+                    email = (sampleReply.sender || sampleReply.recipient || '').trim().toLowerCase();
+                }
+            }
+        } else {
+            email = clientId.replace('fallback-', '').trim().toLowerCase();
+            client = await EmailClient.findOne({ email });
+        }
+
+        if (!email && clientId.includes('@')) {
+            email = clientId.trim().toLowerCase();
+        }
+
+        if (!email) {
+            return res.status(404).json({ success: false, message: "Could not resolve client email address" });
+        }
+
+        const settings = await EmailSettings.findOne() || await EmailSettings.create({});
+        const activeFromEmail = settings.senderEmail || process.env.SMTP_USER || process.env.EMAIL_USER || '';
+
+        const mailOptions = {
+            from: `"${settings.senderName || 'Octoink Studios'}" <${activeFromEmail}>`,
+            to: email,
+            subject,
+            html: body
+        };
+
+        if (settings.replyTo || activeFromEmail) {
+            mailOptions.replyTo = settings.replyTo || activeFromEmail;
+        }
+
+        const info = await transporter.sendMail(mailOptions);
+
+        const sentEmail = new SentEmail({
+            recipient: email,
+            clientId: client ? client._id : null,
+            subject,
+            body,
+            messageId: info.messageId,
+            deliveryStatus: 'Sent',
+            recipientEmail: email,
+            normalizedEmail: email,
+            status: 'Sent',
+            sentAt: new Date()
+        });
+        await sentEmail.save();
+
+        res.json({ success: true, message: "Reply sent successfully", sentEmail });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Follow-ups Endpoints
+app.get("/api/email-outreach/follow-ups", async (req, res) => {
+    try {
+        const followUps = await EmailFollowUp.find().populate('clientId').populate('campaignId').sort({ sendAt: 1 });
+        res.json({ success: true, followUps });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/follow-ups/:id/pause", async (req, res) => {
+    try {
+        const followUp = await EmailFollowUp.findByIdAndUpdate(req.params.id, { status: 'Paused' }, { new: true });
+        if (!followUp) return res.status(404).json({ success: false, message: "Follow-up not found" });
+        res.json({ success: true, followUp });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/follow-ups/:id/resume", async (req, res) => {
+    try {
+        const followUp = await EmailFollowUp.findByIdAndUpdate(req.params.id, { status: 'Scheduled' }, { new: true });
+        if (!followUp) return res.status(404).json({ success: false, message: "Follow-up not found" });
+        res.json({ success: true, followUp });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.post("/api/email-outreach/follow-ups/:id/cancel", async (req, res) => {
+    try {
+        const followUp = await EmailFollowUp.findByIdAndUpdate(req.params.id, { status: 'Cancelled' }, { new: true });
+        if (!followUp) return res.status(404).json({ success: false, message: "Follow-up not found" });
+        res.json({ success: true, followUp });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Settings Endpoints
+app.get("/api/email-outreach/settings", async (req, res) => {
+    try {
+        let settings = await EmailSettings.findOne();
+        const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER || '';
+        const smtpPass = process.env.SMTP_PASS || process.env.EMAIL_PASS || '';
+        const smtpConfigured = !!(smtpUser && smtpPass);
+        
+        if (!settings) {
+            settings = new EmailSettings({ senderEmail: smtpUser });
+            await settings.save();
+        } else if (!settings.senderEmail && smtpUser) {
+            settings.senderEmail = smtpUser;
+            await settings.save();
+        }
+        
+        let connectionStatus = 'Not Configured';
+        if (smtpConfigured) {
+            connectionStatus = global.smtpConnectionStatus || 'Connected';
+        }
+        
+        res.json({ 
+            success: true, 
+            settings,
+            smtpConfigured,
+            connectionStatus,
+            senderEmail: settings.senderEmail || smtpUser,
+            provider: "Gmail / SMTP"
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+app.put("/api/email-outreach/settings", async (req, res) => {
+    try {
+        let settings = await EmailSettings.findOne();
+        if (!settings) {
+            settings = new EmailSettings(req.body);
+        } else {
+            Object.assign(settings, req.body);
+        }
+        await settings.save();
+        
+        const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER || '';
+        const smtpPass = process.env.SMTP_PASS || process.env.EMAIL_PASS || '';
+        const smtpConfigured = !!(smtpUser && smtpPass);
+        let connectionStatus = 'Not Configured';
+        if (smtpConfigured) {
+            connectionStatus = global.smtpConnectionStatus || 'Connected';
+        }
+        
+        res.json({ 
+            success: true, 
+            settings,
+            smtpConfigured,
+            connectionStatus,
+            senderEmail: settings.senderEmail || smtpUser,
+            provider: "Gmail / SMTP"
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Reconnect / Re-verify SMTP endpoint
+app.post("/api/email-outreach/reconnect", async (req, res) => {
+    try {
+        global.smtpConnectionStatus = 'Checking...';
+        transporter.verify((error) => {
+            if (error) {
+                console.log("❌ SMTP Re-verify Error:", error.message);
+                global.smtpConnectionStatus = 'Disconnected';
+                global.smtpError = error.message;
+            } else {
+                console.log("✅ SMTP Re-verify: Connected");
+                global.smtpConnectionStatus = 'Connected';
+                global.smtpError = null;
+            }
+        });
+        // Wait briefly for verify to complete
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER || '';
+        res.json({
+            success: true,
+            connectionStatus: global.smtpConnectionStatus,
+            senderEmail: smtpUser
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Test Email endpoint
+app.post("/api/email-outreach/test-email", async (req, res) => {
+    const { recipientEmail } = req.body;
+    if (!recipientEmail) {
+        return res.status(400).json({ success: false, error: "Recipient email is required." });
+    }
+    
+    try {
+        const settings = await EmailSettings.findOne() || await EmailSettings.create({});
+        const smtpUser = process.env.SMTP_USER || process.env.EMAIL_USER;
+        const smtpPass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
+        const senderEmail = settings.senderEmail || smtpUser;
+        const senderName = settings.senderName || "Octoink Studios";
+        
+        if (!smtpUser || !smtpPass) {
+            return res.status(400).json({ 
+                success: false, 
+                error: "SMTP credentials are not configured in backend environment." 
+            });
+        }
+        
+        console.log(`[EMAIL OUTREACH]\nCampaign: Test Campaign\nFrom: ${senderEmail}\nTo: ${recipientEmail}\nStatus: SENDING`);
+        
+        const mailOptions = {
+            from: `"${senderName}" <${senderEmail}>`,
+            to: recipientEmail,
+            subject: "Octoink Studios Email Outreach Test Email",
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ede9fe; border-radius: 12px;">
+                    <h2 style="color: #7c3aed; margin-top: 0;">Test Connection Successful</h2>
+                    <p>This is a test email sent from the <strong>Octoink Studios Email Outreach module</strong>.</p>
+                    <p>If you received this email, it means your SMTP configuration works correctly!</p>
+                    <hr style="border: 0; border-top: 1px solid #ede9fe; margin: 20px 0;" />
+                    <p style="font-size: 11px; color: #94a3b8; font-family: monospace;">Sent from: ${senderEmail}</p>
+                </div>
+            `
+        };
+        
+        if (settings.replyTo || smtpUser) {
+            mailOptions.replyTo = settings.replyTo || smtpUser;
+        }
+        
+        const info = await transporter.sendMail(mailOptions);
+        
+        console.log(`[EMAIL OUTREACH]\nFrom: ${senderEmail}\nTo: ${recipientEmail}\nStatus: SENT\nMessage ID: ${info.messageId}`);
+        global.smtpConnectionStatus = 'Connected';
+        
+        res.json({
+            success: true,
+            messageId: info.messageId,
+            senderEmail: senderEmail,
+            recipientEmail: recipientEmail
+        });
+    } catch (err) {
+        console.error(`[EMAIL OUTREACH]\nFrom: ${process.env.SMTP_USER || process.env.EMAIL_USER}\nTo: ${recipientEmail}\nStatus: FAILED\nError: ${err.message}`);
+        global.smtpConnectionStatus = 'Disconnected';
+        res.status(500).json({
+            success: false,
+            error: err.message,
+            senderEmail: process.env.SMTP_USER || process.env.EMAIL_USER || '',
+            recipientEmail: recipientEmail
+        });
+    }
+});
+
+// Client Sent Email detail endpoint
+app.get("/api/email-outreach/clients/:id/sent-email", async (req, res) => {
+    try {
+        const client = await EmailClient.findById(req.params.id);
+        if (!client) return res.status(404).json({ success: false, message: "Client not found" });
+        
+        const sentEmail = await SentEmail.findOne({ clientId: client._id }).sort({ sentTime: -1 });
+        if (!sentEmail) {
+            return res.json({ 
+                success: true, 
+                sentEmail: {
+                    recipient: client.email,
+                    recipientEmail: client.email,
+                    recipientName: client.name || '',
+                    status: client.status,
+                    sentAt: client.lastEmailSent,
+                    senderEmail: client.sentFrom || process.env.SMTP_USER || process.env.EMAIL_USER || '',
+                    senderName: "Octoink Studios",
+                    subject: '(No email details found)',
+                    body: ''
+                }
+            });
+        }
+        
+        const settings = await EmailSettings.findOne() || {};
+        
+        res.json({
+            success: true,
+            sentEmail: {
+                _id: sentEmail._id,
+                recipient: sentEmail.recipient || client.email,
+                recipientEmail: sentEmail.recipientEmail || client.email,
+                recipientName: sentEmail.recipientName || client.name || '',
+                senderName: settings.senderName || "Octoink Studios",
+                senderEmail: client.sentFrom || sentEmail.senderEmail || process.env.SMTP_USER || process.env.EMAIL_USER || '',
+                subject: sentEmail.subject,
+                body: sentEmail.body,
+                status: sentEmail.status || client.status,
+                sentAt: sentEmail.sentAt || client.lastEmailSent,
+                messageId: sentEmail.messageId
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Analytics Endpoints
+app.get("/api/email-outreach/analytics", async (req, res) => {
+    try {
+        const { range, startDate, endDate } = req.query;
+        let dateFilter = {};
+        
+        if (range) {
+            const { filter } = getDateRangeFilter(range, startDate, endDate);
+            dateFilter = filter;
+        }
+
+        const totalSent = await SentEmail.countDocuments(dateFilter);
+        const opened = await SentEmail.countDocuments({ ...dateFilter, openStatus: true });
+        const clicked = await SentEmail.countDocuments({ ...dateFilter, clickStatus: true });
+        const replied = await SentEmail.countDocuments({ ...dateFilter, replyStatus: true });
+        const bounced = await SentEmail.countDocuments({ ...dateFilter, deliveryStatus: 'Bounced' });
+        const delivered = await SentEmail.countDocuments({ ...dateFilter, deliveryStatus: { $ne: 'Failed' } });
+
+        const openRate = totalSent > 0 ? ((opened / totalSent) * 100).toFixed(1) : 0;
+        const clickRate = totalSent > 0 ? ((clicked / totalSent) * 100).toFixed(1) : 0;
+        const replyRate = totalSent > 0 ? ((replied / totalSent) * 100).toFixed(1) : 0;
+        const bounceRate = totalSent > 0 ? ((bounced / totalSent) * 100).toFixed(1) : 0;
+
+        // For dailyStats, match using dateFilter
+        const dailyStats = await SentEmail.aggregate([
+            { $match: dateFilter },
+            {
+                $group: {
+                    _id: { $dateToString: { format: "%Y-%m-%d", date: "$sentTime" } },
+                    sent: { $sum: 1 },
+                    opened: { $sum: { $cond: ["$openStatus", 1, 0] } },
+                    clicked: { $sum: { $cond: ["$clickStatus", 1, 0] } },
+                    replied: { $sum: { $cond: ["$replyStatus", 1, 0] } }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]);
+
+        res.json({
+            success: true,
+            summary: {
+                totalSent,
+                delivered,
+                opened,
+                clicked,
+                replied,
+                bounceRate,
+                openRate,
+                clickRate,
+                replyRate
+            },
+            dailyStats
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// Tracking Pixel & Link Tracking Endpoints
+app.get("/api/email-outreach/track/open/:sentEmailId", async (req, res) => {
+    try {
+        const { sentEmailId } = req.params;
+        const sentEmail = await SentEmail.findById(sentEmailId);
+        
+        if (sentEmail && !sentEmail.openStatus) {
+            sentEmail.openStatus = true;
+            sentEmail.openedAt = new Date();
+            await sentEmail.save();
+
+            const event = new EmailEvent({
+                sentEmailId: sentEmail._id,
+                eventType: 'Open',
+                userAgent: req.headers['user-agent'],
+                ipAddress: req.ip
+            });
+            await event.save();
+
+            await EmailClient.findByIdAndUpdate(sentEmail.clientId, {
+                opened: true,
+                status: 'Opened'
+            });
+        }
+    } catch (err) {
+        console.error("Open tracking error:", err.message);
+    }
+
+    const pixel = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+        'base64'
+    );
+    res.writeHead(200, {
+        'Content-Type': 'image/png',
+        'Content-Length': pixel.length,
+        'Cache-Control': 'no-store, no-cache, must-revalidate, private'
+    });
+    res.end(pixel);
+});
+
+app.get("/api/email-outreach/track/click/:sentEmailId", async (req, res) => {
+    const { sentEmailId } = req.params;
+    const destUrl = req.query.url;
+
+    try {
+        const sentEmail = await SentEmail.findById(sentEmailId);
+        
+        if (sentEmail) {
+            if (!sentEmail.clickStatus) {
+                sentEmail.clickStatus = true;
+                sentEmail.clickedAt = new Date();
+                await sentEmail.save();
+
+                await EmailClient.findByIdAndUpdate(sentEmail.clientId, {
+                    clicked: true,
+                    status: 'Clicked'
+                });
+            }
+
+            const event = new EmailEvent({
+                sentEmailId: sentEmail._id,
+                eventType: 'Click',
+                url: destUrl,
+                userAgent: req.headers['user-agent'],
+                ipAddress: req.ip
+            });
+            await event.save();
+        }
+    } catch (err) {
+        console.error("Click tracking error:", err.message);
+    }
+
+    if (destUrl) {
+        res.redirect(destUrl);
+    } else {
+        res.redirect('/');
+    }
+});
+
+// ── SCHEDULER IMPLEMENTATION ─────────────────────────────
+
+async function checkReplies() {
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        return;
+    }
+    
+    let emailSettings = await EmailSettings.findOne();
+    if (!emailSettings) {
+        emailSettings = await EmailSettings.create({});
+    }
+
+    const config = {
+        imap: {
+            user: process.env.EMAIL_USER,
+            password: process.env.EMAIL_PASS,
+            host: 'imap.gmail.com',
+            port: 993,
+            tls: true,
+            tlsOptions: { rejectUnauthorized: false },
+            authTimeout: 10000
+        }
+    };
+
+    try {
+        const connection = await imapSimple.connect(config);
+        await connection.openBox('INBOX');
+
+        const searchCriteria = ['UNSEEN', ['SINCE', new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()]];
+        const fetchOptions = {
+            bodies: ['HEADER', 'TEXT', ''],
+            markSeen: true
+        };
+
+        const messages = await connection.search(searchCriteria, fetchOptions);
+        
+        for (const message of messages) {
+            const allBody = message.parts.find(part => part.which === '');
+            const parsed = await simpleParser(allBody.body);
+            
+            const fromEmail = parsed.from?.value?.[0]?.address?.toLowerCase();
+            const subject = parsed.subject || '';
+            const textBody = parsed.text || parsed.html || '';
+            const messageId = parsed.messageId;
+            const inReplyTo = parsed.inReplyTo;
+            const references = parsed.references || [];
+            
+            if (!fromEmail) continue;
+
+            let sentEmail = null;
+            if (inReplyTo) {
+                sentEmail = await SentEmail.findOne({ messageId: inReplyTo });
+            }
+            if (!sentEmail && references.length > 0) {
+                sentEmail = await SentEmail.findOne({ messageId: { $in: references } });
+            }
+            if (!sentEmail) {
+                const client = await EmailClient.findOne({ email: fromEmail });
+                if (client) {
+                    sentEmail = await SentEmail.findOne({ recipient: fromEmail }).sort({ sentTime: -1 });
+                }
+            }
+
+            if (sentEmail) {
+                const clientId = sentEmail.clientId;
+                const campaignId = sentEmail.campaignId;
+
+                const existingReply = await EmailReply.findOne({ messageId });
+                if (!existingReply) {
+                    const reply = new EmailReply({
+                        clientId,
+                        campaignId,
+                        sentEmailId: sentEmail._id,
+                        subject,
+                        body: textBody,
+                        sender: fromEmail,
+                        messageId,
+                        replyDate: parsed.date || new Date()
+                    });
+                    await reply.save();
+
+                    sentEmail.replyStatus = true;
+                    sentEmail.repliedAt = parsed.date || new Date();
+                    await sentEmail.save();
+
+                    await EmailClient.findByIdAndUpdate(clientId, {
+                        status: 'Replied',
+                        replied: true,
+                        followUpStatus: 'Stopped — Replied'
+                    });
+
+                    await EmailFollowUp.updateMany(
+                        { clientId, campaignId, status: { $in: ['Scheduled', 'Waiting'] } },
+                        { $set: { status: 'Stopped — Replied' } }
+                    );
+
+                    console.log(`[IMAP] Recorded reply from ${fromEmail} for campaign ${campaignId}`);
+                }
+            }
+        }
+
+        connection.end();
+    } catch (err) {
+        console.error("[IMAP] Connection/check error:", err.message);
+    }
+}
+
+// Active campaign runs tracking
+const activeCampaignRuns = new Map(); // campaignId -> AbortController
+
+// Helper to calculate timezone offset
+function getTimezoneOffset(timeZone, date = new Date()) {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric", month: "numeric", day: "numeric",
+      hour: "numeric", minute: "numeric", second: "numeric",
+      hourCycle: "h23"
+    });
+    const parts = formatter.formatToParts(date);
+    const getVal = type => parseInt(parts.find(p => p.type === type).value, 10);
+    
+    const utc = Date.UTC(
+      date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(),
+      date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds()
+    );
+    
+    const local = Date.UTC(
+      getVal("year"), getVal("month") - 1, getVal("day"),
+      getVal("hour"), getVal("minute"), getVal("second")
+    );
+    
+    return local - utc;
+  } catch (err) {
+    return 0;
+  }
+}
+
+// Helper to get start of today in timezone
+function getStartOfDayInTimezone(timezone) {
+  const now = new Date();
+  const offsetMs = getTimezoneOffset(timezone, now);
+  const localTime = new Date(now.getTime() + offsetMs);
+  localTime.setUTCHours(0, 0, 0, 0);
+  return new Date(localTime.getTime() - offsetMs);
+}
+
+// Helper to calculate date range matching boundaries
+function getDateRangeFilter(range, startDate, endDate, timezone = 'Asia/Kolkata') {
+    const now = new Date();
+    let start = null;
+    let end = null;
+    const offsetMs = getTimezoneOffset(timezone, now);
+    const localNow = new Date(now.getTime() + offsetMs);
+
+    switch (range) {
+        case 'today':
+            start = new Date(localNow);
+            start.setUTCHours(0, 0, 0, 0);
+            start = new Date(start.getTime() - offsetMs);
+            
+            end = new Date(localNow);
+            end.setUTCHours(23, 59, 59, 999);
+            end = new Date(end.getTime() - offsetMs);
+            break;
+            
+        case 'yesterday':
+            start = new Date(localNow);
+            start.setUTCDate(start.getUTCDate() - 1);
+            start.setUTCHours(0, 0, 0, 0);
+            start = new Date(start.getTime() - offsetMs);
+
+            end = new Date(localNow);
+            end.setUTCDate(end.getUTCDate() - 1);
+            end.setUTCHours(23, 59, 59, 999);
+            end = new Date(end.getTime() - offsetMs);
+            break;
+
+        case '7days':
+            start = new Date(localNow);
+            start.setUTCDate(start.getUTCDate() - 6);
+            start.setUTCHours(0, 0, 0, 0);
+            start = new Date(start.getTime() - offsetMs);
+            
+            end = new Date(localNow);
+            end.setUTCHours(23, 59, 59, 999);
+            end = new Date(end.getTime() - offsetMs);
+            break;
+
+        case '30days':
+            start = new Date(localNow);
+            start.setUTCDate(start.getUTCDate() - 29);
+            start.setUTCHours(0, 0, 0, 0);
+            start = new Date(start.getTime() - offsetMs);
+            
+            end = new Date(localNow);
+            end.setUTCHours(23, 59, 59, 999);
+            end = new Date(end.getTime() - offsetMs);
+            break;
+
+        case '90days':
+            start = new Date(localNow);
+            start.setUTCDate(start.getUTCDate() - 89);
+            start.setUTCHours(0, 0, 0, 0);
+            start = new Date(start.getTime() - offsetMs);
+            
+            end = new Date(localNow);
+            end.setUTCHours(23, 59, 59, 999);
+            end = new Date(end.getTime() - offsetMs);
+            break;
+
+        case 'thismonth':
+            start = new Date(localNow);
+            start.setUTCDate(1);
+            start.setUTCHours(0, 0, 0, 0);
+            start = new Date(start.getTime() - offsetMs);
+
+            end = new Date(localNow);
+            end.setUTCHours(23, 59, 59, 999);
+            end = new Date(end.getTime() - offsetMs);
+            break;
+
+        case 'lastmonth':
+            start = new Date(localNow);
+            start.setUTCMonth(start.getUTCMonth() - 1);
+            start.setUTCDate(1);
+            start.setUTCHours(0, 0, 0, 0);
+            start = new Date(start.getTime() - offsetMs);
+
+            end = new Date(localNow);
+            end.setUTCDate(0);
+            end.setUTCHours(23, 59, 59, 999);
+            end = new Date(end.getTime() - offsetMs);
+            break;
+
+        case 'custom':
+            if (startDate) {
+                const sDate = new Date(startDate);
+                const localS = new Date(sDate.getTime() + offsetMs);
+                localS.setUTCHours(0, 0, 0, 0);
+                start = new Date(localS.getTime() - offsetMs);
+            }
+            if (endDate) {
+                const eDate = new Date(endDate);
+                const localE = new Date(eDate.getTime() + offsetMs);
+                localE.setUTCHours(23, 59, 59, 999);
+                end = new Date(localE.getTime() - offsetMs);
+            }
+            break;
+            
+        default:
+            break;
+    }
+
+    const filter = {};
+    if (start || end) {
+        filter.sentTime = {};
+        if (start) filter.sentTime.$gte = start;
+        if (end) filter.sentTime.$lte = end;
+    }
+    return { filter, start, end };
+}
+
+// Helper to check if currently within allowed sending window
+function isWithinSendingWindow(settings) {
+  const now = new Date();
+  const timezone = settings.timezone || 'Asia/Kolkata';
+  const offsetMs = getTimezoneOffset(timezone, now);
+  const localTime = new Date(now.getTime() + offsetMs);
+  
+  const day = localTime.getUTCDay(); // 0 is Sunday, 6 is Saturday
+  if (settings.sendingSchedule?.days && settings.sendingSchedule.days.length > 0) {
+    if (!settings.sendingSchedule.days.includes(day)) {
+      return false;
+    }
+  }
+  
+  const startStr = settings.sendingSchedule?.startTime || '09:00';
+  const endStr = settings.sendingSchedule?.endTime || '18:00';
+  
+  const [startH, startM] = startStr.split(':').map(Number);
+  const [endH, endM] = endStr.split(':').map(Number);
+  
+  const currentH = localTime.getUTCHours();
+  const currentM = localTime.getUTCMinutes();
+  
+  const currentVal = currentH * 60 + currentM;
+  const startVal = startH * 60 + startM;
+  const endVal = endH * 60 + endM;
+  
+  return currentVal >= startVal && currentVal <= endVal;
+}
+
+// Helper to check daily limit
+async function checkDailyLimitReached(settings) {
+  const startOfToday = getStartOfDayInTimezone(settings.timezone || 'Asia/Kolkata');
+  const countToday = await SentEmail.countDocuments({
+    sentAt: { $gte: startOfToday },
+    status: { $in: ['Sent', 'Opened', 'Clicked', 'Replied'] }
+  });
+  return countToday >= settings.dailyLimit;
+}
+
+async function runCampaignQueue(campaignId) {
+  const campIdStr = campaignId.toString();
+  if (activeCampaignRuns.has(campIdStr)) {
+    return;
+  }
+  const controller = new AbortController();
+  activeCampaignRuns.set(campIdStr, controller);
+  
+  try {
+    await processCampaignQueue(campaignId, controller.signal);
+  } catch (err) {
+    console.error(`[Queue Runner] Error in campaign ${campaignId}:`, err);
+  } finally {
+    activeCampaignRuns.delete(campIdStr);
+  }
+}
+
+async function processCampaignQueue(campaignId, signal) {
+  while (true) {
+    if (signal?.aborted) {
+      console.log(`[Queue Runner] Campaign ${campaignId} run aborted.`);
+      break;
+    }
+
+    const campaign = await EmailCampaign.findById(campaignId);
+    if (!campaign) {
+      console.log(`[Queue Runner] Campaign ${campaignId} not found.`);
+      break;
+    }
+
+    if (campaign.status !== 'Running') {
+      console.log(`[Queue Runner] Campaign ${campaignId} is in status '${campaign.status}'. Stopping queue.`);
+      break;
+    }
+
+    const settings = await EmailSettings.findOne() || await EmailSettings.create({});
+
+    // Check allowed sending window
+    if (!isWithinSendingWindow(settings)) {
+      console.log(`[Queue Runner] Outside allowed sending window. Suspending campaign ${campaignId}.`);
+      campaign.status = 'Paused';
+      await campaign.save();
+      break;
+    }
+
+    // Check daily limit
+    const limitReached = await checkDailyLimitReached(settings);
+    if (limitReached) {
+      console.log(`[Queue Runner] Daily limit of ${settings.dailyLimit} reached. Suspending campaign ${campaignId}.`);
+      campaign.status = 'Paused';
+      await campaign.save();
+      break;
+    }
+
+    // Find the first client whose status is Pending
+    const client = await EmailClient.findOne({ campaignId, status: 'Pending' }).sort({ sortOrder: 1 });
+    if (!client) {
+      campaign.status = 'Completed';
+      await campaign.save();
+      console.log(`[Queue Runner] Campaign ${campaignId} completed successfully.`);
+      break;
+    }
+
+    client.status = 'Sending';
+    await client.save();
+
+    const normalizedEmail = client.email.trim().toLowerCase();
+    const alreadySent = await SentEmail.findOne({
+      campaignId,
+      normalizedEmail,
+      status: { $in: ['Sent', 'Opened', 'Clicked', 'Replied'] },
+      step: 0
+    });
+
+    if (alreadySent) {
+      client.status = 'Already Sent';
+      await client.save();
+      continue;
+    }
+
+    // Find the currently saved Initial Client Email template
+    const template = await EmailTemplate.findOne({ name: "Default Outreach Template" });
+    const baseSubject = template ? template.subject : (campaign.subject || '');
+    const baseBody = template ? template.body : (campaign.body || '');
+
+    // Personalize content
+    let personalizedBody = baseBody;
+    personalizedBody = personalizedBody.replace(/\{\{client_name\}\}/g, client.name || 'there');
+    personalizedBody = personalizedBody.replace(/\{\{name\}\}/g, client.name || 'there');
+    personalizedBody = personalizedBody.replace(/\{\{email\}\}/g, client.email || '');
+    personalizedBody = personalizedBody.replace(/\{\{company_name\}\}/g, client.company || 'your company');
+    personalizedBody = personalizedBody.replace(/\{\{company\}\}/g, client.company || 'your company');
+    personalizedBody = personalizedBody.replace(/\{\{service\}\}/g, client.service || 'our services');
+
+    let personalizedSubject = baseSubject;
+    personalizedSubject = personalizedSubject.replace(/\{\{client_name\}\}/g, client.name || 'there');
+    personalizedSubject = personalizedSubject.replace(/\{\{name\}\}/g, client.name || 'there');
+    personalizedSubject = personalizedSubject.replace(/\{\{email\}\}/g, client.email || '');
+    personalizedSubject = personalizedSubject.replace(/\{\{company_name\}\}/g, client.company || 'your company');
+    personalizedSubject = personalizedSubject.replace(/\{\{company\}\}/g, client.company || 'your company');
+    personalizedSubject = personalizedSubject.replace(/\{\{service\}\}/g, client.service || 'our services');
+
+    const sentEmail = new SentEmail({
+      recipient: client.email,
+      clientId: client._id,
+      campaignId: campaign._id,
+      subject: personalizedSubject,
+      body: personalizedBody,
+      recipientEmail: client.email,
+      recipientName: client.name || '',
+      normalizedEmail,
+      status: 'Sending',
+      sentAt: new Date(),
+      step: 0
+    });
+    await sentEmail.save();
+
+    let finalBody = personalizedBody;
+    if (settings.trackingEnabled) {
+      const openTrackingUrl = `${process.env.VITE_API_URL || 'http://localhost:4999'}/api/email-outreach/track/open/${sentEmail._id}`;
+      finalBody += `<img src="${openTrackingUrl}" width="1" height="1" style="display:none;" />`;
+
+      const linkRegex = /href="([^"]+)"/g;
+      finalBody = finalBody.replace(linkRegex, (match, url) => {
+        if (url.startsWith('#') || url.includes('/api/email-outreach/track')) return match;
+        const trackingUrl = `${process.env.VITE_API_URL || 'http://localhost:4999'}/api/email-outreach/track/click/${sentEmail._id}?url=${encodeURIComponent(url)}`;
+        return `href="${trackingUrl}"`;
+      });
+    }
+
+    const activeFromEmail = settings.senderEmail || process.env.SMTP_USER || process.env.EMAIL_USER || '';
+    
+    // Log [EMAIL OUTREACH] SENDING
+    console.log(`[EMAIL OUTREACH]\nCampaign: ${campaign.name}\nFrom: ${activeFromEmail}\nTo: ${client.email}\nStatus: SENDING`);
+
+    try {
+      const mailOptions = {
+        from: `"${settings.senderName || 'Octoink Studios'} <${activeFromEmail}>"`,
+        to: client.email,
+        subject: personalizedSubject,
+        html: finalBody
+      };
+
+      if (settings.replyTo || activeFromEmail) {
+        mailOptions.replyTo = settings.replyTo || activeFromEmail;
+      }
+
+      if (campaign.attachments && campaign.attachments.length > 0) {
+        mailOptions.attachments = campaign.attachments.map(att => {
+          const basename = path.basename(att);
+          return {
+            filename: basename,
+            path: path.isAbsolute(att) ? att : path.join(__dirname, att)
+          };
+        });
+      }
+
+      const info = await transporter.sendMail(mailOptions);
+
+      // Log [EMAIL OUTREACH] SENT
+      console.log(`[EMAIL OUTREACH]\nFrom: ${activeFromEmail}\nTo: ${client.email}\nStatus: SENT\nMessage ID: ${info.messageId}`);
+      global.smtpConnectionStatus = 'Connected';
+
+      sentEmail.messageId = info.messageId;
+      sentEmail.status = 'Sent';
+      sentEmail.sentAt = new Date();
+      await sentEmail.save();
+
+      client.status = 'Sent';
+      client.lastEmailSent = new Date();
+      client.sentFrom = activeFromEmail;
+      await client.save();
+
+      if (campaign.followUpSettings && campaign.followUpSettings.length > 0) {
+        let currentDelay = 0;
+        for (let i = 0; i < campaign.followUpSettings.length; i++) {
+          const stepSetting = campaign.followUpSettings[i];
+          currentDelay += stepSetting.delayDays;
+          const sendAtTime = new Date();
+          sendAtTime.setDate(sendAtTime.getDate() + currentDelay);
+
+          const followUp = new EmailFollowUp({
+            clientId: client._id,
+            campaignId: campaign._id,
+            step: i + 1,
+            subject: stepSetting.subject,
+            body: stepSetting.body,
+            sendAt: sendAtTime,
+            status: 'Scheduled'
+          });
+          await followUp.save();
+
+          if (i === 0) {
+            client.nextFollowUp = sendAtTime;
+            await client.save();
+          }
+        }
+      }
+    } catch (err) {
+      // Log [EMAIL OUTREACH] FAILED
+      console.error(`[EMAIL OUTREACH]\nFrom: ${activeFromEmail}\nTo: ${client.email}\nStatus: FAILED\nError: ${err.message}`);
+      global.smtpConnectionStatus = 'Disconnected';
+      
+      sentEmail.status = 'Failed';
+      sentEmail.error = err.message;
+      sentEmail.retryCount = (client.retryCount || 0) + 1;
+      await sentEmail.save();
+
+      client.status = 'Failed';
+      client.error = err.message;
+      client.retryCount = (client.retryCount || 0) + 1;
+      await client.save();
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+}
+
+async function processScheduledCampaigns() {
+    const now = new Date();
+    const campaigns = await EmailCampaign.find({
+        status: 'Scheduled',
+        scheduledTime: { $lte: now }
+    });
+
+    for (const campaign of campaigns) {
+        campaign.status = 'Running';
+        await campaign.save();
+        runCampaignQueue(campaign._id);
+    }
+}
+
+async function processScheduledFollowUps() {
+    const now = new Date();
+    const followUps = await EmailFollowUp.find({
+        status: 'Scheduled',
+        sendAt: { $lte: now }
+    });
+
+    const settings = await EmailSettings.findOne() || await EmailSettings.create({});
+
+    if (!isWithinSendingWindow(settings)) {
+        return;
+    }
+
+    for (const fu of followUps) {
+        const client = await EmailClient.findById(fu.clientId);
+        if (!client || client.replied === true || client.status === 'Replied' || client.status === 'Unsubscribed' || client.followUpStatus === 'Stopped — Replied') {
+            fu.status = (client?.replied === true || client?.status === 'Replied' || client?.followUpStatus === 'Stopped — Replied') ? 'Stopped — Replied' : 'Cancelled';
+            await fu.save();
+            continue;
+        }
+
+        const campaign = await EmailCampaign.findById(fu.campaignId);
+        if (!campaign || campaign.status === 'Paused' || campaign.status === 'Draft') {
+            fu.status = 'Paused';
+            await fu.save();
+            continue;
+        }
+
+        const limitReached = await checkDailyLimitReached(settings);
+        if (limitReached) {
+            console.warn(`[Follow-up Scheduler] Daily limit reached (${settings.dailyLimit}). Postponing follow-up.`);
+            break;
+        }
+
+        fu.status = 'Waiting';
+        await fu.save();
+
+        let personalizedBody = fu.body || '';
+        personalizedBody = personalizedBody.replace(/\{\{name\}\}/g, client.name || 'there');
+        personalizedBody = personalizedBody.replace(/\{\{company\}\}/g, client.company || 'your company');
+        personalizedBody = personalizedBody.replace(/\{\{service\}\}/g, client.service || 'our services');
+
+        let personalizedSubject = fu.subject || '';
+        personalizedSubject = personalizedSubject.replace(/\{\{name\}\}/g, client.name || 'there');
+        personalizedSubject = personalizedSubject.replace(/\{\{company\}\}/g, client.company || 'your company');
+        personalizedSubject = personalizedSubject.replace(/\{\{service\}\}/g, client.service || 'our services');
+
+        const sentEmail = new SentEmail({
+            recipient: client.email,
+            clientId: client._id,
+            campaignId: fu.campaignId,
+            subject: personalizedSubject,
+            body: personalizedBody,
+            recipientEmail: client.email,
+            recipientName: client.name || '',
+            normalizedEmail: client.email.trim().toLowerCase(),
+            status: 'Sending',
+            sentAt: new Date(),
+            step: fu.step
+        });
+        await sentEmail.save();
+
+        let finalBody = personalizedBody;
+        if (settings.trackingEnabled) {
+            const openTrackingUrl = `${process.env.VITE_API_URL || 'http://localhost:4999'}/api/email-outreach/track/open/${sentEmail._id}`;
+            finalBody += `<img src="${openTrackingUrl}" width="1" height="1" style="display:none;" />`;
+
+            const linkRegex = /href="([^"]+)"/g;
+            finalBody = finalBody.replace(linkRegex, (match, url) => {
+                if (url.startsWith('#') || url.includes('/api/email-outreach/track')) return match;
+                const trackingUrl = `${process.env.VITE_API_URL || 'http://localhost:4999'}/api/email-outreach/track/click/${sentEmail._id}?url=${encodeURIComponent(url)}`;
+                return `href="${trackingUrl}"`;
+            });
+        }
+
+        const activeFromEmail = settings.senderEmail || process.env.SMTP_USER || process.env.EMAIL_USER || '';
+        
+        // Log [EMAIL OUTREACH] SENDING
+        console.log(`[EMAIL OUTREACH]\nCampaign: ${campaign.name} (Follow-up Step ${fu.step})\nFrom: ${activeFromEmail}\nTo: ${client.email}\nStatus: SENDING`);
+
+        try {
+            const mailOptions = {
+                from: `"${settings.senderName || 'Octoink Studios'} <${activeFromEmail}>"`,
+                to: client.email,
+                subject: personalizedSubject,
+                html: finalBody
+            };
+
+            if (settings.replyTo || activeFromEmail) {
+                mailOptions.replyTo = settings.replyTo || activeFromEmail;
+            }
+
+            const info = await transporter.sendMail(mailOptions);
+            
+            // Log [EMAIL OUTREACH] SENT
+            console.log(`[EMAIL OUTREACH]\nFrom: ${activeFromEmail}\nTo: ${client.email}\nStatus: SENT\nMessage ID: ${info.messageId}`);
+            global.smtpConnectionStatus = 'Connected';
+
+            sentEmail.messageId = info.messageId;
+            sentEmail.status = 'Sent';
+            sentEmail.sentAt = new Date();
+            await sentEmail.save();
+
+            fu.sentEmailId = sentEmail._id;
+            fu.status = 'Sent';
+            await fu.save();
+
+            client.lastEmailSent = new Date();
+            client.sentFrom = activeFromEmail;
+            
+            const nextFU = await EmailFollowUp.findOne({
+                clientId: client._id,
+                campaignId: fu.campaignId,
+                step: fu.step + 1
+            });
+            client.nextFollowUp = nextFU ? nextFU.sendAt : null;
+            await client.save();
+
+        } catch (err) {
+            // Log [EMAIL OUTREACH] FAILED
+            console.error(`[EMAIL OUTREACH]\nFrom: ${activeFromEmail}\nTo: ${client.email}\nStatus: FAILED\nError: ${err.message}`);
+            global.smtpConnectionStatus = 'Disconnected';
+
+            sentEmail.status = 'Failed';
+            sentEmail.error = err.message;
+            await sentEmail.save();
+            fu.status = 'Cancelled';
+            await fu.save();
+        }
+    }
+}
+
+// Start Scheduler Interval
+setInterval(async () => {
+    try {
+        await checkReplies();
+    } catch (_) {}
+    try {
+        await processScheduledCampaigns();
+    } catch (_) {}
+    try {
+        await processScheduledFollowUps();
+    } catch (_) {}
+}, 60 * 1000);
+
+// Background Liveness / Auto-resume Checker
+setInterval(async () => {
+    try {
+        const runningCampaigns = await EmailCampaign.find({ status: 'Running' });
+        for (const campaign of runningCampaigns) {
+            if (!activeCampaignRuns.has(campaign._id.toString())) {
+                console.log(`[Liveness Checker] Resuming campaign ${campaign._id} which was marked Running but not active in memory.`);
+                runCampaignQueue(campaign._id);
+            }
+        }
+    } catch (_) {}
+}, 30 * 1000);
+
 // ── START ─────────────────────────────────────────────────
+
 // 404 catch-all — returns JSON instead of HTML
 app.use((req, res) => {
     res.status(404).json({ success: false, message: `Route not found: ${req.method} ${req.url}` });

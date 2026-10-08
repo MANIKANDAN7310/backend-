@@ -11,7 +11,9 @@ import {
   X,
   ShoppingCart,
   Palette,
-  Mail
+  Mail,
+  FileText,
+  Send
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -20,12 +22,15 @@ const menuItems = [
   { path: '/orders', icon: ShoppingCart, label: 'Purchases' },
   { path: '/custom-orders', icon: Palette, label: 'Custom Design Orders' },
   { path: '/mails', icon: Mail, label: 'Website Mails' },
+  { path: '/email-track', icon: Send, label: 'Email Track' },
   { path: '/clients', icon: BarChart3, label: 'Clients' },
   { path: '/products', icon: Package, label: 'Products' },
   { path: '/upload', icon: Upload, label: 'Upload Product' },
   { path: '/hero-banners', icon: Image, label: 'Store Layout' },
+  { path: '/invoice', icon: FileText, label: 'Invoice' },
   { path: '/settings', icon: Settings, label: 'Settings' },
 ];
+
 
 const Sidebar = ({ isOpen, toggleSidebar, closeSidebar }) => {
   const { logout } = useAuth();

@@ -134,3 +134,14 @@ export const getProfile = async (req, res) => {
         res.status(500).json({ success: false, message: err.message });
     }
 };
+
+export const getClientById = async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id).select("-password");
+        if (!user) return res.status(404).json({ success: false, message: "Client not found" });
+        res.json({ success: true, client: user });
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+};
+

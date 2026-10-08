@@ -18,6 +18,7 @@ import orderRoutes from "./routes/orderRoutes.js";
 import portfolioRoutes from "./routes/portfolioRoutes.js";
 import statsRoutes from "./routes/statsRoutes.js";
 import paymentRoutes from "./routes/paymentRoutes.js";
+import emailTrackRoutes from "./routes/emailTrackRoutes.js";
 
 // Models for inline routes (banners, settings, contact)
 import Banner from "./models/Banner.js";
@@ -140,6 +141,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/portfolio", portfolioRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/payment", paymentRoutes);
+app.use("/api/email-track", emailTrackRoutes);
 
 // ─── Dashboard Specific Routes ────────────────────────
 import { getClients, deleteClient, getClientById, deleteAllClients } from "./controllers/authController.js";
