@@ -17,7 +17,10 @@ import path from "path";
 import fs from "fs";
 
 const getSenderCredentials = () => {
-  const user = process.env.EMAIL_FROM || process.env.EMAIL_USER || "hello.octoinkstudios@gmail.com";
+  let user = process.env.EMAIL_USER || process.env.EMAIL_FROM || process.env.SMTP_USER || "hello.octoinkstudios@gmail.com";
+  if (!user || user.toLowerCase().includes("octoinkstudios7310")) {
+    user = "hello.octoinkstudios@gmail.com";
+  }
   const pass = process.env.EMAIL_PASS || process.env.SMTP_PASS || "oyfekwhejzjozsgc";
   return { user, pass };
 };
