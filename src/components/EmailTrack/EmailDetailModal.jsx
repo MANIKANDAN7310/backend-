@@ -82,7 +82,14 @@ const EmailDetailModal = ({ recipient, campaign, onClose }) => {
             <span>ID: <strong className="text-violet-400">{recipient.campaignId}</strong></span>
           </div>
           <div className="text-sm font-semibold text-white">
-            Subject: {campaign?.subject || recipient.subject || 'N/A'}
+            Subject: {
+              (campaign?.subject || recipient.subject || 'N/A')
+                .replace(/\{companyName\}/gi, recipient.clientName || recipient.companyName || 'Client')
+                .replace(/\{company\}/gi, recipient.clientName || recipient.companyName || 'Client')
+                .replace(/\{clientName\}/gi, recipient.clientName || recipient.companyName || 'Client')
+                .replace(/\{name\}/gi, recipient.clientName || recipient.companyName || 'Client')
+                .replace(/\{email\}/gi, recipient.email || '')
+            }
           </div>
         </div>
 
@@ -92,7 +99,14 @@ const EmailDetailModal = ({ recipient, campaign, onClose }) => {
             <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wider">Email Body</h4>
             <div 
               className="bg-black/30 border border-[var(--border)] rounded-xl p-4 text-sm text-slate-300 max-h-48 overflow-y-auto prose prose-invert"
-              dangerouslySetInnerHTML={{ __html: campaign.body }}
+              dangerouslySetInnerHTML={{ 
+                __html: campaign.body
+                  .replace(/\{companyName\}/gi, recipient.clientName || recipient.companyName || 'Client')
+                  .replace(/\{company\}/gi, recipient.clientName || recipient.companyName || 'Client')
+                  .replace(/\{clientName\}/gi, recipient.clientName || recipient.companyName || 'Client')
+                  .replace(/\{name\}/gi, recipient.clientName || recipient.companyName || 'Client')
+                  .replace(/\{email\}/gi, recipient.email || '')
+              }}
             />
           </div>
         )}
