@@ -231,8 +231,9 @@ const EmailTrackLeads = () => {
               >
                 <option value="ALL">All Reply Statuses</option>
                 <option value="New Reply">New Reply</option>
-                <option value="Contacted">Contacted</option>
                 <option value="Qualified">Qualified</option>
+                <option value="Contacted">Contacted</option>
+                <option value="Converted">Converted</option>
                 <option value="Follow-up">Follow-up</option>
                 <option value="Closed">Closed</option>
               </select>
@@ -303,8 +304,9 @@ const EmailTrackLeads = () => {
                             className="px-2.5 py-1 rounded-xl text-xs font-semibold bg-purple-500/10 text-purple-300 border border-purple-500/20 focus:outline-none cursor-pointer"
                           >
                             <option value="New Reply" className="bg-slate-900 text-slate-200">New Reply</option>
-                            <option value="Contacted" className="bg-slate-900 text-slate-200">Contacted</option>
                             <option value="Qualified" className="bg-slate-900 text-slate-200">Qualified</option>
+                            <option value="Contacted" className="bg-slate-900 text-slate-200">Contacted</option>
+                            <option value="Converted" className="bg-slate-900 text-slate-200">Converted</option>
                             <option value="Follow-up" className="bg-slate-900 text-slate-200">Follow-up</option>
                             <option value="Closed" className="bg-slate-900 text-slate-200">Closed</option>
                           </select>
