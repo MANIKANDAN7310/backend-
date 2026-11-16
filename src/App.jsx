@@ -18,6 +18,7 @@ import ContactMails from './pages/ContactMails';
 import ProductAnalytics from './pages/ProductAnalytics';
 import Clients from './pages/Clients';
 import Invoice from './pages/Invoice';
+import LeadFinder from './pages/LeadFinder';
 import EmailTrackMain from './pages/EmailTrack/EmailTrackMain';
 import EmailTrackCampaigns from './pages/EmailTrack/EmailTrackCampaigns';
 import EmailTrackFollowUp from './pages/EmailTrack/EmailTrackFollowUp';
@@ -61,6 +62,7 @@ function App() {
                 <Route path="/hero-banners" element={<HeroBanners />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/invoice" element={<Invoice />} />
+                <Route path="/lead-finder" element={<LeadFinder />} />
 
                 {/* Email Track Module Routes */}
                 <Route path="/email-track" element={<EmailTrackMain />} />

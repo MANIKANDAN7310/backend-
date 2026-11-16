@@ -233,6 +233,8 @@ const EmailTrackMain = () => {
               nameColIdx = idx;
             } else if (nameColIdx === -1 && h.includes('name') && !h.includes('company') && !h.includes('file') && !h.includes('domain') && !h.includes('org')) {
               nameColIdx = idx;
+            } else if (nameColIdx === -1 && (h === 'company name' || h === 'company_name' || h === 'company' || h === 'business name' || h === 'organization')) {
+              nameColIdx = idx;
             }
           });
         }

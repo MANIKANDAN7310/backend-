@@ -13,7 +13,8 @@ import {
   Palette,
   Mail,
   FileText,
-  Send
+  Send,
+  Search
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -23,6 +24,7 @@ const menuItems = [
   { path: '/custom-orders', icon: Palette, label: 'Custom Design Orders' },
   { path: '/mails', icon: Mail, label: 'Website Mails' },
   { path: '/email-track', icon: Send, label: 'Email Track' },
+  { path: '/lead-finder', icon: Search, label: 'Lead Finder' },
   { path: '/clients', icon: BarChart3, label: 'Clients' },
   { path: '/products', icon: Package, label: 'Products' },
   { path: '/upload', icon: Upload, label: 'Upload Product' },
