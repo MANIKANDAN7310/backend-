@@ -14,6 +14,7 @@ import Razorpay from "razorpay";
 import crypto from "crypto";
 import imapSimple from "imap-simple";
 import { simpleParser } from "mailparser";
+import leadFinderRoutes from "../main-site/backend/routes/leadFinderRoutes.js";
 
 
 // Forcing Google DNS to resolve MongoDB and Gmail hostnames more reliably
@@ -35,6 +36,7 @@ const PORT = process.env.PORT || 4999;
 
 app.use(cors());
 app.use(express.json());
+app.use("/api/lead-finder", leadFinderRoutes);
 app.use("/uploads/images", cors(), express.static(path.join(__dirname, "uploads/images"), {
     maxAge: '7d',
     immutable: true,
