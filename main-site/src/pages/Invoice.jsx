@@ -133,7 +133,7 @@ const Invoice = () => {
               <p>Account Name: OctoInk Studios LLC</p>
               <p>Account Number: XXXX-XXXX-4590</p>
               <p>Routing Number: XXXXX0210</p>
-              <br/>
+              <br />
               <p><strong>Digital Stripe Gateway link:</strong></p>
               <p>payments.octoinkstudios.com/invoice-0412</p>
             </div>
@@ -174,7 +174,7 @@ const Invoice = () => {
               <div className="signature-subtitle">OctoInk Studios Design Lead</div>
             </div>
           </div>
-          
+
           {/* Work Completion Images Section */}
           {images.length > 0 && (
             <div className="work-completion-section">
@@ -182,7 +182,7 @@ const Invoice = () => {
               <div className="images-grid">
                 {images.map((imgUrl, idx) => (
                   <div key={idx} className="completion-image-wrapper">
-                    <img src={imgUrl} alt={`Completion proof ${idx+1}`} className="completion-image" />
+                    <img src={imgUrl} alt={`Completion proof ${idx + 1}`} className="completion-image" />
                   </div>
                 ))}
               </div>
@@ -198,13 +198,13 @@ const Invoice = () => {
       <div className="invoice-actions-top">
         <div className="final-invoice-actions">
           <div>
-            <input 
-              type="file" 
-              id="file-upload" 
-              multiple 
-              accept="image/*" 
-              onChange={handleImageUpload} 
-              style={{display: 'none'}} 
+            <input
+              type="file"
+              id="file-upload"
+              multiple
+              accept="image/*"
+              onChange={handleImageUpload}
+              style={{ display: 'none' }}
             />
             <label htmlFor="file-upload" className="upload-btn">
               Upload Completion Images

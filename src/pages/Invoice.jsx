@@ -1,33 +1,37 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import { 
-  Download, 
-  Printer, 
-  Upload as UploadIcon, 
-  Plus, 
-  Trash2, 
-  Loader2, 
-  FileText, 
-  CheckCircle2, 
-  ZoomIn, 
-  ZoomOut, 
+import {
+  Download,
+  Printer,
+  Upload as UploadIcon,
+  Plus,
+  Trash2,
+  Loader2,
+  FileText,
+  CheckCircle2,
+  Check,
+  ZoomIn,
+  ZoomOut,
   Maximize2,
   X as XIcon,
   Sparkles
 } from 'lucide-react';
 import './Invoice.css';
 import logo from '../assets/logo.png';
+import DatePicker from '../components/DatePicker';
 
 const BASE_A4_WIDTH = 794; // 210mm at 96 DPI
 const BASE_A4_HEIGHT = 1123; // 297mm at 96 DPI
+
+const DEFAULT_FORMATS = ['AI', 'EPS', 'PDF', 'PNG', 'JPG', 'SVG', 'DST', 'EMB', 'PES', 'PSD', 'ZIP', 'WEBP'];
 
 const Invoice = () => {
   const [images, setImages] = useState([]);
   const [generating, setGenerating] = useState(false);
   const invoiceRef = useRef(null);
   const previewContainerRef = useRef(null);
-  
+
   // Responsive zoom & scale states
   const [scale, setScale] = useState(1);
   const [zoomMode, setZoomMode] = useState('fit'); // 'fit' | '100' | 'custom'
@@ -58,20 +62,73 @@ const Invoice = () => {
     terms: '• Full payment is due within the agreed payment terms.\n• All final deliverables and vector source assets are released upon receipt of payment.\n• Additional revisions or extra work outside the agreed project scope may incur additional fees.\n• Ownership of artwork and final deliverables transfers upon full settlement.\n• For billing inquiries or tax invoice assistance, contact hello@octoinkstudios.com.'
   });
 
+  const [customFormatInput, setCustomFormatInput] = useState('');
+  const [customFormats, setCustomFormats] = useState([]);
+
+  // Formats handling: convert comma-separated string to/from toggleable buttons
+  const selectedFormats = useMemo(() => {
+    return (formData.deliveredFormats || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+  }, [formData.deliveredFormats]);
+
+  const allAvailableFormats = useMemo(() => {
+    const list = [...DEFAULT_FORMATS, ...customFormats];
+    selectedFormats.forEach(fmt => {
+      if (!list.some(f => f.toLowerCase() === fmt.toLowerCase())) {
+        list.push(fmt);
+      }
+    });
+    return list;
+  }, [customFormats, selectedFormats]);
+
+  const toggleFormat = (fmt) => {
+    const isPresent = selectedFormats.some(f => f.toLowerCase() === fmt.toLowerCase());
+    let next;
+    if (isPresent) {
+      next = selectedFormats.filter(f => f.toLowerCase() !== fmt.toLowerCase());
+    } else {
+      next = [...selectedFormats, fmt];
+    }
+    setFormData(prev => ({ ...prev, deliveredFormats: next.join(', ') }));
+  };
+
+  const handleSelectAllFormats = () => {
+    setFormData(prev => ({ ...prev, deliveredFormats: allAvailableFormats.join(', ') }));
+  };
+
+  const handleClearFormats = () => {
+    setFormData(prev => ({ ...prev, deliveredFormats: '' }));
+  };
+
+  const handleAddCustomFormat = () => {
+    const trimmed = customFormatInput.trim().toUpperCase();
+    if (!trimmed) return;
+    if (!allAvailableFormats.some(f => f.toLowerCase() === trimmed.toLowerCase())) {
+      setCustomFormats(prev => [...prev, trimmed]);
+    }
+    if (!selectedFormats.some(f => f.toLowerCase() === trimmed.toLowerCase())) {
+      const next = [...selectedFormats, trimmed];
+      setFormData(prev => ({ ...prev, deliveredFormats: next.join(', ') }));
+    }
+    setCustomFormatInput('');
+  };
+
   const [serviceItems, setServiceItems] = useState([
-    { 
-      id: 1, 
-      name: 'BRAND IDENTITY', 
-      desc: 'Comprehensive typography system, premium color guidelines, brand book asset curation, and cross-platform collateral templates.', 
-      qty: 1, 
-      price: 3500 
+    {
+      id: 1,
+      name: 'BRAND IDENTITY',
+      desc: 'Comprehensive typography system, premium color guidelines, brand book asset curation, and cross-platform collateral templates.',
+      qty: 1,
+      price: 3500
     },
-    { 
-      id: 2, 
-      name: 'UI/UX DESIGN', 
-      desc: 'High-fidelity website interactive prototypes, responsive layout mockups for desktop/mobile views, and handoff assets.', 
-      qty: 1, 
-      price: 4200 
+    {
+      id: 2,
+      name: 'UI/UX DESIGN',
+      desc: 'High-fidelity website interactive prototypes, responsive layout mockups for desktop/mobile views, and handoff assets.',
+      qty: 1,
+      price: 4200
     }
   ]);
 
@@ -123,14 +180,14 @@ const Invoice = () => {
   };
 
   const handleItemChange = (id, field, value) => {
-    setServiceItems(items => 
+    setServiceItems(items =>
       items.map(item => item.id === id ? { ...item, [field]: value } : item)
     );
   };
 
   const addItem = () => {
     setServiceItems(prev => [
-      ...prev, 
+      ...prev,
       { id: Date.now(), name: '', desc: '', qty: 1, price: 0 }
     ]);
   };
@@ -206,16 +263,16 @@ const Invoice = () => {
       const originalPosition = element.style.position;
       const originalLeft = element.style.left;
       const originalTop = element.style.top;
-      
+
       element.style.transform = 'none';
       element.style.position = 'static';
       element.style.left = '0';
       element.style.top = '0';
 
-      const canvas = await html2canvas(element, { 
-        scale: 2, 
-        useCORS: true, 
-        backgroundColor: '#ffffff', 
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
         width: BASE_A4_WIDTH,
         windowWidth: BASE_A4_WIDTH
       });
@@ -227,7 +284,7 @@ const Invoice = () => {
       element.style.top = originalTop;
 
       const imgData = canvas.toDataURL('image/png');
-      
+
       // Standard A4: 210mm x 297mm
       const pdf = new jsPDF({
         orientation: 'portrait',
@@ -256,10 +313,10 @@ const Invoice = () => {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-bold text-white tracking-tight">Final Invoice</h1>
-                <span className="px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/20">
+                <h1 className="text-2xl font-bold text-white tracking-tight">Invoice</h1>
+                {/* <span className="px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/20">
                   A4 Printable Standard
-                </span>
+                </span> */}
               </div>
               <p className="text-xs text-[var(--text-dim)] mt-0.5">
                 Generate, preview, print, and export official A4 commercial invoices
@@ -269,9 +326,9 @@ const Invoice = () => {
         </div>
 
         <div className="invoice-top-actions">
-          <button 
+          <button
             type="button"
-            className="action-btn print-btn" 
+            className="action-btn print-btn"
             onClick={handlePrint}
             title="Print genuine A4 invoice"
           >
@@ -279,14 +336,14 @@ const Invoice = () => {
             <span>Print Invoice</span>
           </button>
 
-          <button 
+          <button
             type="button"
-            className="action-btn download-btn" 
+            className="action-btn download-btn"
             onClick={downloadPDF}
             disabled={generating}
             title="Download true A4 PDF document"
           >
-            {generating ? <Loader2 className="animate-spin" size={18}/> : <Download size={18} />}
+            {generating ? <Loader2 className="animate-spin" size={18} /> : <Download size={18} />}
             <span>{generating ? 'Exporting PDF...' : 'Download PDF'}</span>
           </button>
         </div>
@@ -294,10 +351,10 @@ const Invoice = () => {
 
       {/* Main Split Layout: Form & Live A4 Preview */}
       <div className="invoice-layout-split">
-        
+
         {/* Left: Input Form Controls */}
         <div className="invoice-form-section no-print">
-          
+
           {/* Card: Invoice Details */}
           <div className="form-card">
             <div className="form-card-title flex items-center justify-between">
@@ -307,54 +364,54 @@ const Invoice = () => {
             <div className="form-row">
               <div className="form-group">
                 <label>Invoice Number</label>
-                <input 
-                  className="form-input" 
-                  name="invoiceNo" 
-                  value={formData.invoiceNo} 
-                  onChange={handleChange} 
+                <input
+                  className="form-input"
+                  name="invoiceNo"
+                  value={formData.invoiceNo}
+                  onChange={handleChange}
                   placeholder="#INV-2026-0412"
                 />
               </div>
               <div className="form-group">
                 <label>Invoice Date</label>
-                <input 
-                  className="form-input" 
-                  name="date" 
-                  value={formData.date} 
-                  onChange={handleChange} 
+                <DatePicker
+                  name="date"
+                  value={formData.date}
+                  onChange={handleChange}
                   placeholder="June 30, 2026"
+                  align="right"
                 />
               </div>
             </div>
             <div className="form-row">
               <div className="form-group">
                 <label>Payment Due Date</label>
-                <input 
-                  className="form-input" 
-                  name="dueDate" 
-                  value={formData.dueDate} 
-                  onChange={handleChange} 
+                <DatePicker
+                  name="dueDate"
+                  value={formData.dueDate}
+                  onChange={handleChange}
                   placeholder="July 14, 2026"
+                  align="left"
                 />
               </div>
               <div className="form-group">
                 <label>Completion Date</label>
-                <input 
-                  className="form-input" 
-                  name="completionDate" 
-                  value={formData.completionDate} 
-                  onChange={handleChange} 
+                <DatePicker
+                  name="completionDate"
+                  value={formData.completionDate}
+                  onChange={handleChange}
                   placeholder="July 24, 2026"
+                  align="right"
                 />
               </div>
             </div>
             <div className="form-row">
               <div className="form-group">
                 <label>Payment Status</label>
-                <select 
-                  className="form-input" 
-                  name="paymentStatus" 
-                  value={formData.paymentStatus} 
+                <select
+                  className="form-input"
+                  name="paymentStatus"
+                  value={formData.paymentStatus}
                   onChange={handleChange}
                 >
                   <option value="Payment Due">Payment Due</option>
@@ -372,32 +429,32 @@ const Invoice = () => {
             <div className="form-row">
               <div className="form-group">
                 <label>Client Contact Name</label>
-                <input 
-                  className="form-input" 
-                  name="clientName" 
-                  value={formData.clientName} 
-                  onChange={handleChange} 
+                <input
+                  className="form-input"
+                  name="clientName"
+                  value={formData.clientName}
+                  onChange={handleChange}
                   placeholder="Sarah Jenkins"
                 />
               </div>
               <div className="form-group">
                 <label>Client Company Name</label>
-                <input 
-                  className="form-input" 
-                  name="clientCompany" 
-                  value={formData.clientCompany} 
-                  onChange={handleChange} 
+                <input
+                  className="form-input"
+                  name="clientCompany"
+                  value={formData.clientCompany}
+                  onChange={handleChange}
                   placeholder="Acme Corporation"
                 />
               </div>
             </div>
             <div className="form-group">
               <label>Client Billing Address & Email</label>
-              <textarea 
-                className="form-input" 
-                name="clientAddress" 
-                value={formData.clientAddress} 
-                onChange={handleChange} 
+              <textarea
+                className="form-input"
+                name="clientAddress"
+                value={formData.clientAddress}
+                onChange={handleChange}
                 rows={3}
                 placeholder="1221 Avenue of the Americas, New York..."
               />
@@ -410,21 +467,21 @@ const Invoice = () => {
             <div className="form-row">
               <div className="form-group">
                 <label>Project Reference</label>
-                <input 
-                  className="form-input" 
-                  name="projectRef" 
-                  value={formData.projectRef} 
-                  onChange={handleChange} 
+                <input
+                  className="form-input"
+                  name="projectRef"
+                  value={formData.projectRef}
+                  onChange={handleChange}
                   placeholder="Brand Identity & UI/UX Overhaul"
                 />
               </div>
               <div className="form-group">
                 <label>Service Window</label>
-                <input 
-                  className="form-input" 
-                  name="serviceWindow" 
-                  value={formData.serviceWindow} 
-                  onChange={handleChange} 
+                <input
+                  className="form-input"
+                  name="serviceWindow"
+                  value={formData.serviceWindow}
+                  onChange={handleChange}
                   placeholder="Q3 2026 Campaign"
                 />
               </div>
@@ -432,32 +489,32 @@ const Invoice = () => {
             <div className="form-row">
               <div className="form-group">
                 <label>Account Manager</label>
-                <input 
-                  className="form-input" 
-                  name="accountManager" 
-                  value={formData.accountManager} 
-                  onChange={handleChange} 
+                <input
+                  className="form-input"
+                  name="accountManager"
+                  value={formData.accountManager}
+                  onChange={handleChange}
                   placeholder="Creative Director"
                 />
               </div>
               <div className="form-group">
                 <label>Delivery Date</label>
-                <input 
-                  className="form-input" 
-                  name="deliveryDate" 
-                  value={formData.deliveryDate} 
-                  onChange={handleChange} 
+                <DatePicker
+                  name="deliveryDate"
+                  value={formData.deliveryDate}
+                  onChange={handleChange}
                   placeholder="July 24, 2026"
+                  align="right"
                 />
               </div>
             </div>
             <div className="form-group">
               <label>Project Status Label</label>
-              <input 
-                className="form-input" 
-                name="projectStatus" 
-                value={formData.projectStatus} 
-                onChange={handleChange} 
+              <input
+                className="form-input"
+                name="projectStatus"
+                value={formData.projectStatus}
+                onChange={handleChange}
                 placeholder="Completed & Approved"
               />
             </div>
@@ -469,49 +526,49 @@ const Invoice = () => {
               <span>Service Items</span>
               <span className="text-xs text-[var(--text-dim)]">{serviceItems.length} items</span>
             </div>
-            
+
             {serviceItems.map((item) => (
               <div className="service-item-row" key={item.id}>
                 <div className="service-item-inputs">
-                  <input 
-                    placeholder="Service Name (e.g., Brand Identity)" 
-                    className="form-input font-semibold" 
-                    value={item.name} 
-                    onChange={(e) => handleItemChange(item.id, 'name', e.target.value)} 
+                  <input
+                    placeholder="Service Name (e.g., Brand Identity)"
+                    className="form-input font-semibold"
+                    value={item.name}
+                    onChange={(e) => handleItemChange(item.id, 'name', e.target.value)}
                   />
-                  <textarea 
-                    placeholder="Description of deliverables..." 
-                    className="form-input" 
-                    style={{ minHeight: '60px' }} 
-                    value={item.desc} 
-                    onChange={(e) => handleItemChange(item.id, 'desc', e.target.value)} 
+                  <textarea
+                    placeholder="Description of deliverables..."
+                    className="form-input"
+                    style={{ minHeight: '60px' }}
+                    value={item.desc}
+                    onChange={(e) => handleItemChange(item.id, 'desc', e.target.value)}
                   />
                 </div>
                 <div className="form-group">
                   <label>Qty</label>
-                  <input 
-                    type="number" 
+                  <input
+                    type="number"
                     min="1"
-                    className="form-input text-center" 
-                    value={item.qty} 
-                    onChange={(e) => handleItemChange(item.id, 'qty', e.target.value)} 
+                    className="form-input text-center"
+                    value={item.qty}
+                    onChange={(e) => handleItemChange(item.id, 'qty', e.target.value)}
                   />
                 </div>
                 <div className="form-group">
                   <label>Price ($)</label>
-                  <input 
-                    type="number" 
+                  <input
+                    type="number"
                     min="0"
                     step="0.01"
-                    className="form-input text-right" 
-                    value={item.price} 
-                    onChange={(e) => handleItemChange(item.id, 'price', e.target.value)} 
+                    className="form-input text-right"
+                    value={item.price}
+                    onChange={(e) => handleItemChange(item.id, 'price', e.target.value)}
                   />
                 </div>
-                <button 
+                <button
                   type="button"
-                  className="remove-btn" 
-                  onClick={() => removeItem(item.id)} 
+                  className="remove-btn"
+                  onClick={() => removeItem(item.id)}
                   title="Remove Item"
                 >
                   <Trash2 size={16} />
@@ -527,26 +584,26 @@ const Invoice = () => {
             <div className="form-row mt-4">
               <div className="form-group">
                 <label>Discount Amount ($)</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   min="0"
                   step="0.01"
-                  className="form-input" 
-                  name="discount" 
-                  value={formData.discount} 
-                  onChange={handleChange} 
+                  className="form-input"
+                  name="discount"
+                  value={formData.discount}
+                  onChange={handleChange}
                 />
               </div>
               <div className="form-group">
                 <label>Tax / GST Rate (%)</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   min="0"
                   step="0.1"
-                  className="form-input" 
-                  name="taxPercent" 
-                  value={formData.taxPercent} 
-                  onChange={handleChange} 
+                  className="form-input"
+                  name="taxPercent"
+                  value={formData.taxPercent}
+                  onChange={handleChange}
                 />
               </div>
             </div>
@@ -554,14 +611,14 @@ const Invoice = () => {
             <div className="form-row">
               <div className="form-group">
                 <label>Amount Already Paid ($)</label>
-                <input 
-                  type="number" 
+                <input
+                  type="number"
                   min="0"
                   step="0.01"
-                  className="form-input" 
-                  name="amountPaid" 
-                  value={formData.amountPaid} 
-                  onChange={handleChange} 
+                  className="form-input"
+                  name="amountPaid"
+                  value={formData.amountPaid}
+                  onChange={handleChange}
                   placeholder="0.00"
                 />
                 <span className="text-[11px] text-[var(--text-dim)]">Leave 0 if full balance is due</span>
@@ -574,60 +631,125 @@ const Invoice = () => {
             <div className="form-card-title">Settings & Policy</div>
             <div className="form-group mb-3">
               <label>Company Address & Contact</label>
-              <textarea 
-                className="form-input" 
-                rows={3} 
-                name="companyAddress" 
-                value={formData.companyAddress} 
-                onChange={handleChange} 
+              <textarea
+                className="form-input"
+                rows={3}
+                name="companyAddress"
+                value={formData.companyAddress}
+                onChange={handleChange}
               />
             </div>
             <div className="form-group mb-3">
               <label>Payment Options (Bank / Stripe Link)</label>
-              <textarea 
-                className="form-input" 
-                style={{ minHeight: '110px' }} 
-                name="paymentOptions" 
-                value={formData.paymentOptions} 
-                onChange={handleChange} 
+              <textarea
+                className="form-input"
+                style={{ minHeight: '110px' }}
+                name="paymentOptions"
+                value={formData.paymentOptions}
+                onChange={handleChange}
               />
             </div>
             <div className="form-group">
               <label>Terms & Conditions</label>
-              <textarea 
-                className="form-input" 
-                style={{ minHeight: '90px' }} 
-                name="terms" 
-                value={formData.terms} 
-                onChange={handleChange} 
+              <textarea
+                className="form-input"
+                style={{ minHeight: '90px' }}
+                name="terms"
+                value={formData.terms}
+                onChange={handleChange}
               />
             </div>
           </div>
 
           {/* Card: Deliverables & Proof Images */}
           <div className="form-card">
-            <div className="form-card-title">Deliverables & Showcase</div>
-            <div className="form-group mb-3">
-              <label>Delivered File Formats (comma separated)</label>
-              <input 
-                className="form-input" 
-                name="deliveredFormats" 
-                value={formData.deliveredFormats} 
-                onChange={handleChange} 
-              />
+            <div className="form-card-title flex items-center justify-between">
+              <span>Deliverables & Showcase</span>
+              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/20">
+                {selectedFormats.length} formats selected
+              </span>
+            </div>
+
+            <div className="form-group mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs text-[var(--text-dim)] font-medium">
+                  Delivered File Formats (Click buttons to select)
+                </label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSelectAllFormats}
+                    className="text-[11px] text-violet-400 hover:text-violet-300 transition-colors font-semibold"
+                  >
+                    Select All
+                  </button>
+                  <span className="text-slate-600 text-xs">•</span>
+                  <button
+                    type="button"
+                    onClick={handleClearFormats}
+                    className="text-[11px] text-slate-400 hover:text-slate-300 transition-colors font-semibold"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              {/* Format Toggle Buttons */}
+              <div className="format-buttons-grid">
+                {allAvailableFormats.map((fmt) => {
+                  const isSelected = selectedFormats.some(f => f.toLowerCase() === fmt.toLowerCase());
+                  return (
+                    <button
+                      type="button"
+                      key={fmt}
+                      onClick={() => toggleFormat(fmt)}
+                      className={`format-toggle-btn ${isSelected ? 'active' : ''}`}
+                    >
+                      {isSelected && <Check size={12} className="shrink-0 stroke-[2.5]" />}
+                      <span>{fmt}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Add Custom Format */}
+              <div className="custom-format-row mt-3">
+                <input
+                  type="text"
+                  placeholder="+ Add custom format (e.g. SVG, CDR, PES)..."
+                  value={customFormatInput}
+                  onChange={(e) => setCustomFormatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddCustomFormat();
+                    }
+                  }}
+                  className="form-input custom-format-input"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddCustomFormat}
+                  className="add-format-btn"
+                  disabled={!customFormatInput.trim()}
+                >
+                  <Plus size={14} />
+                  <span>Add</span>
+                </button>
+              </div>
             </div>
             <div className="form-group">
               <label>Final Delivery Proof Images (Optional)</label>
-              <input 
-                type="file" 
-                id="file-upload" 
-                multiple 
-                accept="image/*" 
-                onChange={handleImageUpload} 
-                style={{ display: 'none' }} 
+              <input
+                type="file"
+                id="file-upload"
+                multiple
+                accept="image/*"
+                onChange={handleImageUpload}
+                style={{ display: 'none' }}
               />
-              <label 
-                htmlFor="file-upload" 
+              <label
+                htmlFor="file-upload"
                 className="upload-btn mt-2 cursor-pointer flex items-center justify-center gap-2"
               >
                 <UploadIcon size={18} /> Select Artwork Images
@@ -637,13 +759,13 @@ const Invoice = () => {
                   {images.map((src, index) => (
                     <div key={index} className="img-thumbnail-wrapper">
                       <img src={src} className="img-thumbnail" alt={`Proof ${index + 1}`} />
-                      <button 
+                      <button
                         type="button"
-                        className="remove-img-btn" 
+                        className="remove-img-btn"
                         onClick={() => removeImage(index)}
                         title="Remove image"
                       >
-                        <XIcon size={12}/>
+                        <XIcon size={12} />
                       </button>
                     </div>
                   ))}
@@ -656,7 +778,7 @@ const Invoice = () => {
 
         {/* Right: Live A4 Document Preview Section */}
         <div className="invoice-preview-section">
-          
+
           {/* Preview Toolbar with Zoom & A4 Indicator */}
           <div className="preview-toolbar no-print">
             <div className="preview-title-wrap flex items-center gap-2">
@@ -667,7 +789,7 @@ const Invoice = () => {
 
             {/* Responsive Zoom Controls */}
             <div className="zoom-controls">
-              <button 
+              <button
                 type="button"
                 className={`zoom-btn ${zoomMode === 'fit' ? 'active' : ''}`}
                 onClick={handleZoomFit}
@@ -676,7 +798,7 @@ const Invoice = () => {
                 <Maximize2 size={13} />
                 <span>Fit</span>
               </button>
-              <button 
+              <button
                 type="button"
                 className={`zoom-btn ${zoomMode === '100' ? 'active' : ''}`}
                 onClick={handleZoom100}
@@ -685,18 +807,18 @@ const Invoice = () => {
                 100%
               </button>
               <div className="zoom-divider" />
-              <button 
+              <button
                 type="button"
-                className="zoom-btn icon-only" 
+                className="zoom-btn icon-only"
                 onClick={handleZoomOut}
                 title="Zoom Out"
               >
                 <ZoomOut size={13} />
               </button>
               <span className="zoom-level-text">{Math.round(scale * 100)}%</span>
-              <button 
+              <button
                 type="button"
-                className="zoom-btn icon-only" 
+                className="zoom-btn icon-only"
                 onClick={handleZoomIn}
                 title="Zoom In"
               >
@@ -707,7 +829,7 @@ const Invoice = () => {
 
           {/* Scroll Area & Responsive Stage */}
           <div className="invoice-scroll-area" ref={previewContainerRef}>
-            <div 
+            <div
               className="invoice-preview-stage"
               style={{
                 width: `${Math.round(BASE_A4_WIDTH * scale)}px`,
@@ -715,8 +837,8 @@ const Invoice = () => {
               }}
             >
               {/* Actual Printable A4 Invoice Sheet */}
-              <div 
-                className="invoice-document" 
+              <div
+                className="invoice-document"
                 ref={invoiceRef}
                 style={{
                   width: `${BASE_A4_WIDTH}px`,
@@ -727,9 +849,9 @@ const Invoice = () => {
               >
                 {/* Centered Watermark Logo */}
                 <img src={logo} className="invoice-watermark" alt="" />
-                
+
                 <div className="invoice-content-inner">
-                  
+
                   {/* Document Header */}
                   <header className="invoice-header">
                     <div className="header-left">
@@ -745,7 +867,7 @@ const Invoice = () => {
                     </div>
 
                     <div className="header-right">
-                      <h1 className="invoice-title-big">FINAL INVOICE</h1>
+                      <h1 className="invoice-title-big">INVOICE</h1>
                       <div className="invoice-meta">
                         <div className="meta-row">
                           <span className="meta-label">INVOICE NO:</span>
@@ -821,7 +943,7 @@ const Invoice = () => {
 
                   {/* Deliverables, Payment Methods & Totals Grid */}
                   <div className="invoice-bottom-grid">
-                    
+
                     {/* Left Column: Deliverables & Payment Methods */}
                     <div className="invoice-left-summary space-y-3">
                       <div className="invoice-info-box completed-preview">
@@ -829,9 +951,13 @@ const Invoice = () => {
                         <p><strong>Project Status:</strong> {formData.projectStatus} by Client</p>
                         <p className="mt-2.5"><strong>Delivered File Formats:</strong></p>
                         <div className="file-formats-container">
-                          {formData.deliveredFormats.split(',').map((fmt, idx) => (
-                            <span key={idx} className="file-format-badge">{fmt.trim()}</span>
-                          ))}
+                          {formData.deliveredFormats
+                            .split(',')
+                            .map(fmt => fmt.trim())
+                            .filter(Boolean)
+                            .map((fmt, idx) => (
+                              <span key={idx} className="file-format-badge">{fmt}</span>
+                            ))}
                         </div>
                       </div>
 
@@ -845,10 +971,10 @@ const Invoice = () => {
                             return (
                               <p key={i} className="payment-line">
                                 <strong>{label}</strong>{' '}
-                                <a 
-                                  href={url.startsWith('http') ? url : `https://${url}`} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
+                                <a
+                                  href={url.startsWith('http') ? url : `https://${url}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
                                   className="payment-link"
                                 >
                                   {url}
@@ -860,7 +986,7 @@ const Invoice = () => {
                         })}
                       </div>
                     </div>
-                    
+
                     {/* Right Column: Complete Totals & GST Calculations */}
                     <div className="totals-box">
                       <div className="total-row">

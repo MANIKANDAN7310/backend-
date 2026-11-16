@@ -306,6 +306,89 @@ textarea.form-input {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
+/* Delivered Format Toggle Buttons */
+.format-buttons-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.format-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  background-color: #161626;
+  border: 1px solid #28283e;
+  color: #94a3b8;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: inherit;
+  user-select: none;
+}
+
+.format-toggle-btn:hover {
+  background-color: #212136;
+  border-color: #4a4a6e;
+  color: #f1f5f9;
+  transform: translateY(-1px);
+}
+
+.format-toggle-btn.active {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  border-color: #8b5cf6;
+  color: #ffffff;
+  box-shadow: 0 3px 12px rgba(124, 58, 237, 0.35);
+}
+
+.format-toggle-btn.active:hover {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  box-shadow: 0 4px 16px rgba(124, 58, 237, 0.5);
+}
+
+.custom-format-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.custom-format-input {
+  font-size: 0.82rem !important;
+  padding: 0.45rem 0.75rem !important;
+}
+
+.add-format-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #1f1f32;
+  border: 1px solid #32324f;
+  color: #c4b5fd;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.add-format-btn:hover:not(:disabled) {
+  background: #7c3aed;
+  border-color: #7c3aed;
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(124, 58, 237, 0.3);
+}
+
+.add-format-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* --- PREVIEW SECTION (RIGHT COLUMN) --- */
 .invoice-preview-section {
   position: sticky;
@@ -440,10 +523,11 @@ textarea.form-input {
   top: 48%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 340px;
-  height: 340px;
+  width: 620px;
+  height: 620px;
   object-fit: contain;
-  opacity: 0.032;
+  opacity: 0.095;
+
   pointer-events: none;
   z-index: 0;
 }
@@ -508,7 +592,7 @@ textarea.form-input {
   font-size: 28px;
   font-weight: 900;
   margin: 0;
-  color: #0f172a;
+  color: #6d28d9;
   letter-spacing: -0.5px;
   text-transform: uppercase;
   line-height: 1;
