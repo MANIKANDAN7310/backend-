@@ -7,7 +7,7 @@
 import { URL } from "node:url";
 import LeadFinderSearch from "../models/LeadFinderSearch.js";
 import CollectedLead from "../models/CollectedLead.js";
-import { getCompaniesForSearch } from "./manufacturingDirectory.js";
+import { getCompaniesForSearch, isLocationMatch, normalizeCountry, normalizeState, normalizeCity } from "./manufacturingDirectory.js";
 
 const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,40}/g;
 
@@ -120,10 +120,15 @@ export function cleanAndValidateEmail(raw, companyHost = "") {
 /**
  * Score email relevance to prioritize primary contact emails
  */
-function scoreEmail(email, host) {
+function scoreEmail(email, host, verifiedEmail = "") {
   let score = 0;
   const lower = email.toLowerCase();
   const domain = lower.split("@")[1] || "";
+
+  // Highest priority for known verified business email
+  if (verifiedEmail && lower === verifiedEmail.toLowerCase()) {
+    score += 150;
+  }
 
   // Bonus for domain match
   if (host && (domain.includes(host) || host.includes(domain))) {
@@ -272,6 +277,12 @@ export async function crawlCompanySite(company) {
     }
   }
 
+  // 3. Fallback or addition of company verified email
+  if (company.verifiedEmail) {
+    const cleaned = cleanAndValidateEmail(company.verifiedEmail, domainHost);
+    if (cleaned) emailsFound.add(cleaned);
+  }
+
   // Pick the best email
   const allEmails = Array.from(emailsFound);
   if (allEmails.length === 0) {
@@ -286,7 +297,11 @@ export async function crawlCompanySite(company) {
   }
 
   // Sort by score
-  allEmails.sort((a, b) => scoreEmail(b, domainHost) - scoreEmail(a, domainHost));
+  allEmails.sort(
+    (a, b) =>
+      scoreEmail(b, domainHost, company.verifiedEmail) -
+      scoreEmail(a, domainHost, company.verifiedEmail)
+  );
   const primaryEmail = allEmails[0];
 
   return {
@@ -300,6 +315,10 @@ export async function crawlCompanySite(company) {
     industry: company.category,
     state: company.state || "",
     city: company.city || "",
+    verifiedCountry: company.country,
+    verifiedState: company.state || "",
+    verifiedCity: company.city || "",
+    address: company.address || "",
     checkedPages: checkedPagesCount,
   };
 }
@@ -314,9 +333,12 @@ export async function executeLeadSearch(searchId) {
 
     search.status = "running";
     search.progress = 5;
-    search.currentStep = "Searching for manufacturing companies...";
+    const locationParts = [search.city, search.state, search.country].filter(Boolean);
+    const locationDesc = locationParts.join(", ");
+
+    search.currentStep = `Searching for verified manufacturing companies in ${locationDesc}...`;
     search.logs.push({
-      message: `Starting automated lead discovery for ${search.country} in industries: ${search.industries.join(
+      message: `Starting strict location-based lead discovery for ${locationDesc} in categories: ${search.industries.join(
         ", "
       )}`,
       type: "info",
@@ -324,7 +346,7 @@ export async function executeLeadSearch(searchId) {
     });
     await search.save();
 
-    // 1. Discover relevant companies
+    // 1. Discover relevant companies matching strict location and industry
     const candidateCompanies = getCompaniesForSearch({
       country: search.country,
       industries: search.industries,
@@ -334,26 +356,30 @@ export async function executeLeadSearch(searchId) {
 
     search.totalDiscovered = candidateCompanies.length;
     search.progress = 20;
-    search.currentStep = `Discovered ${candidateCompanies.length} potential manufacturing companies. Locating official websites...`;
-    search.logs.push({
-      message: `Discovered ${candidateCompanies.length} verified companies matching filters. Preparing website crawlers...`,
-      type: "info",
-      timestamp: new Date(),
-    });
-    await search.save();
 
     if (candidateCompanies.length === 0) {
       search.status = "completed";
       search.progress = 100;
-      search.currentStep = "No companies found matching the specified filters.";
+      search.currentStep = "No matching companies found for the selected location and industry. Try another city or category.";
+      search.emailsFound = 0;
+      search.uniqueEmails = 0;
+      search.results = [];
       search.logs.push({
-        message: "No companies found for this country and industry combination.",
+        message: "No matching companies found for the selected location and industry. Try another city or category.",
         type: "warning",
         timestamp: new Date(),
       });
       await search.save();
       return;
     }
+
+    search.currentStep = `Discovered ${candidateCompanies.length} potential manufacturing companies in ${locationDesc}. Locating official websites...`;
+    search.logs.push({
+      message: `Discovered ${candidateCompanies.length} verified companies matching ${locationDesc}. Preparing website crawlers...`,
+      type: "info",
+      timestamp: new Date(),
+    });
+    await search.save();
 
     // 2. Scan websites in controlled concurrency
     const collectedResults = [];
@@ -383,6 +409,26 @@ export async function executeLeadSearch(searchId) {
 
       for (const res of chunkResults) {
         if (res && res.success && res.email) {
+          // Double verify company location against search filters
+          const locValid = isLocationMatch(
+            {
+              country: res.verifiedCountry || res.country,
+              state: res.verifiedState || res.state,
+              city: res.verifiedCity || res.city,
+              address: res.address || "",
+            },
+            {
+              country: search.country,
+              state: search.state,
+              city: search.city,
+            }
+          );
+
+          if (!locValid) {
+            console.warn(`Location validation rejected ${res.companyName}: does not match ${locationDesc}`);
+            continue;
+          }
+
           const normEmail = res.email.toLowerCase().trim();
           const normCompany = res.companyName.toLowerCase().trim();
 
@@ -394,13 +440,17 @@ export async function executeLeadSearch(searchId) {
             const leadObj = {
               companyName: res.companyName,
               email: normEmail,
-              country: search.country,
-              industry: res.industry || search.industries[0],
+              country: res.verifiedCountry || res.country,
+              state: res.verifiedState || res.state || search.state || "",
+              city: res.verifiedCity || res.city || search.city || "",
+              verifiedCountry: res.verifiedCountry || res.country,
+              verifiedState: res.verifiedState || res.state || search.state || "",
+              verifiedCity: res.verifiedCity || res.city || search.city || "",
+              industry: res.industry || (search.industries && search.industries[0]) || "",
               website: res.website,
-              state: res.state || search.state || "",
-              city: res.city || search.city || "",
+              address: res.address || "",
               sourceUrl: res.sourceUrl || res.website,
-              allEmails: res.allEmails || [normEmail],
+              allEmails: res.allEmails && res.allEmails.length > 0 ? res.allEmails : [normEmail],
               foundAt: new Date(),
             };
 
@@ -413,11 +463,15 @@ export async function executeLeadSearch(searchId) {
                 {
                   companyName: res.companyName,
                   email: normEmail,
-                  country: search.country,
-                  industry: res.industry || search.industries[0],
+                  country: leadObj.country,
+                  state: leadObj.state,
+                  city: leadObj.city,
+                  verifiedCountry: leadObj.verifiedCountry,
+                  verifiedState: leadObj.verifiedState,
+                  verifiedCity: leadObj.verifiedCity,
+                  address: leadObj.address,
+                  industry: leadObj.industry,
                   website: res.website,
-                  state: res.state || "",
-                  city: res.city || "",
                   sourceUrl: res.website,
                   searchId: search._id,
                 },
@@ -426,7 +480,7 @@ export async function executeLeadSearch(searchId) {
             } catch (_) {}
 
             search.logs.push({
-              message: `Found business email: ${normEmail} (${res.companyName})`,
+              message: `Found business email: ${normEmail} (${res.companyName} - ${leadObj.verifiedCity || leadObj.verifiedState}, ${leadObj.verifiedCountry})`,
               type: "success",
               timestamp: new Date(),
             });
@@ -453,27 +507,42 @@ export async function executeLeadSearch(searchId) {
 
     // 3. Deduplication & Final Validation Step
     search.progress = 92;
-    search.currentStep = "Removing duplicates and validating email syntax...";
+    search.currentStep = "Verifying company locations and email syntax...";
     search.logs.push({
-      message: `Verified and deduplicated ${collectedResults.length} leads. Finalizing storage...`,
+      message: `Verified and deduplicated ${collectedResults.length} leads strictly for ${locationDesc}. Finalizing storage...`,
       type: "info",
       timestamp: new Date(),
     });
     await search.save();
 
     // 4. Save Final Results
-    search.status = "completed";
-    search.progress = 100;
-    search.currentStep = `Lead collection complete! Found ${collectedResults.length} verified business emails from ${totalCompanies} companies.`;
-    search.emailsFound = collectedResults.length;
-    search.uniqueEmails = collectedResults.length;
-    search.results = collectedResults;
-    search.logs.push({
-      message: `Successfully collected ${collectedResults.length} ready-to-contact business leads with valid emails.`,
-      type: "success",
-      timestamp: new Date(),
-    });
-    await search.save();
+    if (collectedResults.length === 0) {
+      search.status = "completed";
+      search.progress = 100;
+      search.currentStep = "No matching companies found for the selected location and industry. Try another city or category.";
+      search.emailsFound = 0;
+      search.uniqueEmails = 0;
+      search.results = [];
+      search.logs.push({
+        message: "No matching companies found for the selected location and industry. Try another city or category.",
+        type: "warning",
+        timestamp: new Date(),
+      });
+      await search.save();
+    } else {
+      search.status = "completed";
+      search.progress = 100;
+      search.currentStep = `Lead collection complete! Found ${collectedResults.length} verified business emails in ${locationDesc}.`;
+      search.emailsFound = collectedResults.length;
+      search.uniqueEmails = collectedResults.length;
+      search.results = collectedResults;
+      search.logs.push({
+        message: `Successfully collected ${collectedResults.length} ready-to-contact business leads with verified location in ${locationDesc}.`,
+        type: "success",
+        timestamp: new Date(),
+      });
+      await search.save();
+    }
   } catch (err) {
     console.error("Lead search execution error:", err);
     try {

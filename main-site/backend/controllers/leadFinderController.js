@@ -31,6 +31,8 @@ export const startSearch = async (req, res) => {
       });
     }
 
+    const locationDesc = [city.trim(), state.trim(), country.trim()].filter(Boolean).join(", ");
+
     const newSearch = new LeadFinderSearch({
       country: country.trim(),
       industries: industryList,
@@ -38,10 +40,10 @@ export const startSearch = async (req, res) => {
       city: city.trim(),
       status: "running",
       progress: 5,
-      currentStep: "Initializing lead discovery engine...",
+      currentStep: `Initializing lead discovery engine for ${locationDesc}...`,
       logs: [
         {
-          message: `Search initiated for ${country.trim()} - ${industryList.join(", ")}`,
+          message: `Search initiated for ${locationDesc} - ${industryList.join(", ")}`,
           type: "info",
           timestamp: new Date(),
         },
@@ -242,7 +244,7 @@ export const exportSearchResults = async (req, res) => {
       });
     }
 
-    // Format rows: Company Name | Email | Country | Industry | Website
+    // Format rows: Company Name | Email | Country | State | City | Industry | Website
     // Ensure deduplication of emails
     const seenEmails = new Set();
     const rows = [];
@@ -255,22 +257,23 @@ export const exportSearchResults = async (req, res) => {
       rows.push({
         "Company Name": r.companyName || "",
         "Email": email,
-        "Country": r.country || search.country || "",
+        "Country": r.verifiedCountry || r.country || search.country || "",
+        "State": r.verifiedState || r.state || search.state || "",
+        "City": r.verifiedCity || r.city || search.city || "",
         "Industry": r.industry || (search.industries && search.industries[0]) || "",
         "Website": r.website || "",
       });
     }
 
-    // Generate clear, sanitized filename: e.g. USA_Medal_Manufacturers_Leads.xlsx
-    const cleanCountry = (search.country || "Global")
-      .replace(/[^a-zA-Z0-9]/g, "_")
-      .slice(0, 20);
+    // Generate clear, sanitized filename: e.g. India_Tamil_Nadu_Trichy_Medal_Manufacturers_Leads.xlsx
+    const locParts = [search.country, search.state, search.city].filter(Boolean);
+    const cleanLocation = locParts.join("_").replace(/[^a-zA-Z0-9]/g, "_").slice(0, 35);
     const cleanIndustry = (search.industries && search.industries[0]
       ? search.industries[0].replace(/[^a-zA-Z0-9]/g, "_")
       : "Manufacturing"
     ).slice(0, 30);
 
-    const baseName = `${cleanCountry}_${cleanIndustry}_Leads`;
+    const baseName = `${cleanLocation}_${cleanIndustry}_Leads`;
 
     if (format === "csv") {
       // Export as CSV
@@ -289,9 +292,11 @@ export const exportSearchResults = async (req, res) => {
 
       // Set column widths for clean readability
       worksheet["!cols"] = [
-        { wch: 30 }, // Company Name
-        { wch: 35 }, // Email
+        { wch: 32 }, // Company Name
+        { wch: 36 }, // Email
         { wch: 20 }, // Country
+        { wch: 22 }, // State
+        { wch: 22 }, // City
         { wch: 30 }, // Industry
         { wch: 40 }, // Website
       ];

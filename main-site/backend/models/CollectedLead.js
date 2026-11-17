@@ -38,6 +38,26 @@ const collectedLeadSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    verifiedCountry: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    verifiedState: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    verifiedCity: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    address: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     sourceUrl: {
       type: String,
       default: "",

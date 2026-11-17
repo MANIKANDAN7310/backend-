@@ -84,6 +84,22 @@ const leadFinderSearchSchema = new mongoose.Schema(
           type: String,
           default: "",
         },
+        verifiedCountry: {
+          type: String,
+          default: "",
+        },
+        verifiedState: {
+          type: String,
+          default: "",
+        },
+        verifiedCity: {
+          type: String,
+          default: "",
+        },
+        address: {
+          type: String,
+          default: "",
+        },
         sourceUrl: {
           type: String,
           default: "",

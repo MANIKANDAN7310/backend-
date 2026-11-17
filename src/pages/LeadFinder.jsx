@@ -396,6 +396,8 @@ const LeadFinder = () => {
     }
 
     const countryName = (meta?.country || selectedCountry || "Global").trim();
+    const stateName = (meta?.state || stateFilter || "").trim();
+    const cityName = (meta?.city || cityFilter || "").trim();
     const industryName =
       meta?.industries && meta.industries[0]
         ? meta.industries[0]
@@ -413,7 +415,9 @@ const LeadFinder = () => {
       rows.push({
         "Company Name": lead.companyName || "",
         "Email": email,
-        "Country": lead.country || countryName,
+        "Country": lead.verifiedCountry || lead.country || countryName,
+        "State": lead.verifiedState || lead.state || stateName,
+        "City": lead.verifiedCity || lead.city || cityName,
         "Industry": lead.industry || industryName,
         "Website": lead.website || "",
       });
@@ -424,19 +428,22 @@ const LeadFinder = () => {
     // Auto-fit column widths
     worksheet["!cols"] = [
       { wch: 32 }, // Company Name
-      { wch: 38 }, // Email
-      { wch: 22 }, // Country
-      { wch: 32 }, // Industry
-      { wch: 42 }, // Website
+      { wch: 36 }, // Email
+      { wch: 20 }, // Country
+      { wch: 22 }, // State
+      { wch: 22 }, // City
+      { wch: 30 }, // Industry
+      { wch: 40 }, // Website
     ];
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Collected Leads");
 
-    // Clean filename: e.g. USA_Medal_Manufacturers_Leads.xlsx
-    const cleanCountry = countryName.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 20);
+    // Clean filename: e.g. India_Tamil_Nadu_Trichy_Medal_Manufacturers_Leads.xlsx
+    const locParts = [countryName, stateName, cityName].filter(Boolean);
+    const cleanLocation = locParts.join("_").replace(/[^a-zA-Z0-9]/g, "_").slice(0, 35);
     const cleanIndustry = industryName.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30);
-    const filename = `${cleanCountry}_${cleanIndustry}_Leads.xlsx`;
+    const filename = `${cleanLocation}_${cleanIndustry}_Leads.xlsx`;
 
     XLSX.writeFile(workbook, filename);
     showNotification(`📥 Downloaded ${rows.length} leads to ${filename}`);
@@ -450,6 +457,8 @@ const LeadFinder = () => {
     }
 
     const countryName = (meta?.country || selectedCountry || "Global").trim();
+    const stateName = (meta?.state || stateFilter || "").trim();
+    const cityName = (meta?.city || cityFilter || "").trim();
     const industryName =
       meta?.industries && meta.industries[0]
         ? meta.industries[0]
@@ -466,7 +475,9 @@ const LeadFinder = () => {
       rows.push({
         "Company Name": lead.companyName || "",
         "Email": email,
-        "Country": lead.country || countryName,
+        "Country": lead.verifiedCountry || lead.country || countryName,
+        "State": lead.verifiedState || lead.state || stateName,
+        "City": lead.verifiedCity || lead.city || cityName,
         "Industry": lead.industry || industryName,
         "Website": lead.website || "",
       });
@@ -477,9 +488,10 @@ const LeadFinder = () => {
 
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
-    const cleanCountry = countryName.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 20);
+    const locParts = [countryName, stateName, cityName].filter(Boolean);
+    const cleanLocation = locParts.join("_").replace(/[^a-zA-Z0-9]/g, "_").slice(0, 35);
     const cleanIndustry = industryName.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30);
-    const filename = `${cleanCountry}_${cleanIndustry}_Leads.csv`;
+    const filename = `${cleanLocation}_${cleanIndustry}_Leads.csv`;
 
     link.href = URL.createObjectURL(blob);
     link.setAttribute("download", filename);
@@ -525,7 +537,13 @@ const LeadFinder = () => {
     return (
       (item.companyName && item.companyName.toLowerCase().includes(q)) ||
       (item.email && item.email.toLowerCase().includes(q)) ||
-      (item.website && item.website.toLowerCase().includes(q))
+      (item.website && item.website.toLowerCase().includes(q)) ||
+      (item.city && item.city.toLowerCase().includes(q)) ||
+      (item.state && item.state.toLowerCase().includes(q)) ||
+      (item.country && item.country.toLowerCase().includes(q)) ||
+      (item.verifiedCity && item.verifiedCity.toLowerCase().includes(q)) ||
+      (item.verifiedState && item.verifiedState.toLowerCase().includes(q)) ||
+      (item.verifiedCountry && item.verifiedCountry.toLowerCase().includes(q))
     );
   });
 
@@ -997,7 +1015,7 @@ const LeadFinder = () => {
                 <thead>
                   <tr className="border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                     <th className="py-3 px-4">Search Date</th>
-                    <th className="py-3 px-4">Country</th>
+                    <th className="py-3 px-4">Location</th>
                     <th className="py-3 px-4">Categories</th>
                     <th className="py-3 px-4">Discovered</th>
                     <th className="py-3 px-4">Emails Collected</th>
@@ -1028,7 +1046,7 @@ const LeadFinder = () => {
                       <td className="py-3.5 px-4 font-bold text-white">
                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 text-slate-200 text-xs">
                           <Globe size={12} className="text-violet-400" />
-                          <span>{item.country}</span>
+                          <span>{[item.city, item.state, item.country].filter(Boolean).join(", ")}</span>
                         </span>
                       </td>
 
@@ -1111,10 +1129,16 @@ const LeadFinder = () => {
                 <span className="text-xs font-bold text-violet-400 uppercase tracking-widest">
                   Lead Discovery Results
                 </span>
-                <h2 className="text-2xl md:text-3xl font-extrabold text-white mt-1 flex items-center gap-2">
-                  <span>Country:</span>
+                <h2 className="text-2xl md:text-3xl font-extrabold text-white mt-1 flex flex-wrap items-center gap-2">
+                  <span>Location:</span>
                   <span className="bg-gradient-to-r from-violet-400 to-purple-400 bg-clip-text text-transparent">
-                    {activeSearchMeta?.country || selectedCountry}
+                    {[
+                      activeSearchMeta?.city || cityFilter,
+                      activeSearchMeta?.state || stateFilter,
+                      activeSearchMeta?.country || selectedCountry,
+                    ]
+                      .filter(Boolean)
+                      .join(", ")}
                   </span>
                 </h2>
                 <div className="flex flex-wrap items-center gap-2 mt-2">
@@ -1156,10 +1180,16 @@ const LeadFinder = () => {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80">
                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  Target Country
+                  Target Location
                 </p>
                 <p className="text-xl font-extrabold text-white mt-1 truncate">
-                  {activeSearchMeta?.country || selectedCountry}
+                  {[
+                    activeSearchMeta?.city || cityFilter,
+                    activeSearchMeta?.state || stateFilter,
+                    activeSearchMeta?.country || selectedCountry,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")}
                 </p>
               </div>
 
@@ -1228,12 +1258,21 @@ const LeadFinder = () => {
                     <th className="py-4 px-6 w-16">No.</th>
                     <th className="py-4 px-6">Company Name</th>
                     <th className="py-4 px-6">Business Email</th>
+                    <th className="py-4 px-6">Verified Location</th>
                     <th className="py-4 px-6">Website</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
                   {displayResults.map((lead, idx) => {
                     const rowKey = `lead-${idx}`;
+                    const locLabel = [
+                      lead.verifiedCity || lead.city,
+                      lead.verifiedState || lead.state,
+                      lead.verifiedCountry || lead.country,
+                    ]
+                      .filter(Boolean)
+                      .join(", ");
+
                     return (
                       <tr
                         key={rowKey}
@@ -1294,6 +1333,16 @@ const LeadFinder = () => {
                           </div>
                         </td>
 
+                        {/* Verified Location */}
+                        <td className="py-4 px-6">
+                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
+                            <MapPin size={12} className="shrink-0 text-emerald-400" />
+                            <span className="truncate max-w-[200px]" title={locLabel}>
+                              {locLabel || "Verified"}
+                            </span>
+                          </div>
+                        </td>
+
                         {/* Website */}
                         <td className="py-4 px-6">
                           {lead.website ? (
@@ -1331,9 +1380,38 @@ const LeadFinder = () => {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          6. EMPTY STATE (WHEN NO SEARCH YET)
+          6. EMPTY STATE OR NO RESULTS MESSAGE
       ───────────────────────────────────────────────────────────── */}
-      {!isSearching && activeResults.length === 0 && (
+      {!isSearching && activeResults.length === 0 && activeSearchMeta && (
+        <div className="card bg-slate-900 border border-amber-500/30 rounded-2xl p-10 md:p-12 text-center space-y-4 shadow-xl">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto">
+            <AlertCircle size={32} />
+          </div>
+          <div className="max-w-lg mx-auto space-y-2">
+            <h3 className="text-xl font-bold text-white">
+              No matching companies found for the selected location and industry. Try another city or category.
+            </h3>
+            <p className="text-sm text-slate-400">
+              No verified manufacturing companies were found in{" "}
+              <strong className="text-white">
+                {[
+                  activeSearchMeta.city,
+                  activeSearchMeta.state,
+                  activeSearchMeta.country,
+                ]
+                  .filter(Boolean)
+                  .join(", ")}
+              </strong>{" "}
+              for the selected categories.
+            </p>
+            <p className="text-xs text-slate-500 pt-1">
+              Strict location verification ensures only genuine companies in the selected region are returned.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {!isSearching && activeResults.length === 0 && !activeSearchMeta && (
         <div className="card bg-slate-900 border border-slate-800 rounded-2xl p-10 md:p-14 text-center space-y-4">
           <div className="w-16 h-16 rounded-2xl bg-violet-500/10 border border-violet-500/20 text-violet-400 flex items-center justify-center mx-auto">
             <Search size={32} />
