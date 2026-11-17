@@ -245,21 +245,27 @@ export const exportSearchResults = async (req, res) => {
     }
 
     // Format rows: Company Name | Email | Country | State | City | Industry | Website
-    // Ensure deduplication of emails
+    // Ensure deduplication of emails and strict location accuracy
     const seenEmails = new Set();
     const rows = [];
 
     for (const r of results) {
       const email = (r.email || "").toLowerCase().trim();
       if (!email || seenEmails.has(email)) continue;
+      // Pre-export validation
+      if (!r.companyName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) continue;
       seenEmails.add(email);
+
+      const verifiedCountry = r.verifiedCountry || r.country || "Location not verified";
+      const verifiedState = r.verifiedState || r.state || "";
+      const verifiedCity = r.verifiedCity || r.city || "";
 
       rows.push({
         "Company Name": r.companyName || "",
         "Email": email,
-        "Country": r.verifiedCountry || r.country || search.country || "",
-        "State": r.verifiedState || r.state || search.state || "",
-        "City": r.verifiedCity || r.city || search.city || "",
+        "Country": verifiedCountry,
+        "State": verifiedState,
+        "City": verifiedCity,
         "Industry": r.industry || (search.industries && search.industries[0]) || "",
         "Website": r.website || "",
       });

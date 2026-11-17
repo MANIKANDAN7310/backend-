@@ -118,6 +118,116 @@ export function cleanAndValidateEmail(raw, companyHost = "") {
 }
 
 /**
+ * Verify that an email belongs to the company's official domain
+ * or is explicitly published as its business contact email.
+ */
+export function isEmailAffiliatedWithCompany(email, company) {
+  if (!email || !company) return false;
+  const lowerEmail = email.toLowerCase().trim();
+
+  // 1. Explicitly published verified business contact email
+  if (company.verifiedEmail && lowerEmail === company.verifiedEmail.toLowerCase().trim()) {
+    return true;
+  }
+
+  const parts = lowerEmail.split("@");
+  if (parts.length !== 2) return false;
+  const [localPart, emailDomain] = parts;
+
+  // Extract host from company.website
+  let domainHost = "";
+  try {
+    const parsed = new URL(company.website);
+    domainHost = parsed.hostname.replace(/^www\./i, "").toLowerCase();
+  } catch (_) {}
+
+  // 2. Exact or subdomain match with company website host
+  if (domainHost) {
+    if (
+      emailDomain === domainHost ||
+      emailDomain.endsWith("." + domainHost) ||
+      domainHost.endsWith("." + emailDomain)
+    ) {
+      return true;
+    }
+  }
+
+  // 3. Known public email providers (Gmail, Outlook, Yahoo) are ONLY acceptable if:
+  // - It is explicitly declared as company.verifiedEmail, OR
+  // - The email username contains key identifiers from company name
+  const publicProviders = [
+    "gmail.com",
+    "yahoo.com",
+    "outlook.com",
+    "hotmail.com",
+    "rediffmail.com",
+    "icloud.com",
+  ];
+  if (publicProviders.includes(emailDomain)) {
+    if (company.verifiedEmail && lowerEmail === company.verifiedEmail.toLowerCase().trim()) {
+      return true;
+    }
+    const cleanCompanyName = (company.name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const cleanLocal = localPart.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (
+      cleanCompanyName.length >= 4 &&
+      (cleanLocal.includes(cleanCompanyName) || cleanCompanyName.includes(cleanLocal))
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  // 4. Reject all third-party domains (e.g. web design agencies, tracking vendors)
+  return false;
+}
+
+/**
+ * Data validation step before saving leads and exporting
+ */
+export function validateLeadRecord(lead, searchCriteria = null) {
+  // 1. Company Name must be non-empty string
+  if (!lead.companyName || typeof lead.companyName !== "string" || !lead.companyName.trim()) {
+    return { valid: false, reason: "Missing company name" };
+  }
+
+  // 2. Email must be valid email format
+  if (
+    !lead.email ||
+    typeof lead.email !== "string" ||
+    !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,40}$/.test(lead.email.trim())
+  ) {
+    return { valid: false, reason: "Invalid email format" };
+  }
+
+  // 3. Website must be valid HTTP/HTTPS URL
+  if (!lead.website || !/^https?:\/\/.+/i.test(lead.website.trim())) {
+    return { valid: false, reason: "Invalid website URL" };
+  }
+
+  // 4. If searchCriteria is provided, verify strict location match
+  if (searchCriteria && searchCriteria.country) {
+    const locMatch = isLocationMatch(
+      {
+        country: lead.verifiedCountry || lead.country,
+        state: lead.verifiedState || lead.state,
+        city: lead.verifiedCity || lead.city,
+        address: lead.address || "",
+      },
+      searchCriteria
+    );
+    if (!locMatch) {
+      return {
+        valid: false,
+        reason: `Location mismatch with search criteria (${searchCriteria.country})`,
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
+/**
  * Score email relevance to prioritize primary contact emails
  */
 function scoreEmail(email, host, verifiedEmail = "") {
@@ -204,14 +314,18 @@ export async function crawlCompanySite(company) {
     ];
     for (const m of mailtoMatches) {
       const cleaned = cleanAndValidateEmail(m[1], domainHost);
-      if (cleaned) emailsFound.add(cleaned);
+      if (cleaned && isEmailAffiliatedWithCompany(cleaned, company)) {
+        emailsFound.add(cleaned);
+      }
     }
 
     // 1b. text pattern extraction
     const textMatches = homeHtml.match(EMAIL_REGEX) || [];
     for (const m of textMatches) {
       const cleaned = cleanAndValidateEmail(m, domainHost);
-      if (cleaned) emailsFound.add(cleaned);
+      if (cleaned && isEmailAffiliatedWithCompany(cleaned, company)) {
+        emailsFound.add(cleaned);
+      }
     }
   }
 
@@ -263,13 +377,17 @@ export async function crawlCompanySite(company) {
         ];
         for (const m of subMailtos) {
           const cleaned = cleanAndValidateEmail(m[1], domainHost);
-          if (cleaned) emailsFound.add(cleaned);
+          if (cleaned && isEmailAffiliatedWithCompany(cleaned, company)) {
+            emailsFound.add(cleaned);
+          }
         }
 
         const subMatches = subHtml.match(EMAIL_REGEX) || [];
         for (const m of subMatches) {
           const cleaned = cleanAndValidateEmail(m, domainHost);
-          if (cleaned) emailsFound.add(cleaned);
+          if (cleaned && isEmailAffiliatedWithCompany(cleaned, company)) {
+            emailsFound.add(cleaned);
+          }
         }
 
         if (emailsFound.size > 0) break;
@@ -280,7 +398,9 @@ export async function crawlCompanySite(company) {
   // 3. Fallback or addition of company verified email
   if (company.verifiedEmail) {
     const cleaned = cleanAndValidateEmail(company.verifiedEmail, domainHost);
-    if (cleaned) emailsFound.add(cleaned);
+    if (cleaned && isEmailAffiliatedWithCompany(cleaned, company)) {
+      emailsFound.add(cleaned);
+    }
   }
 
   // Pick the best email
@@ -432,20 +552,49 @@ export async function executeLeadSearch(searchId) {
           const normEmail = res.email.toLowerCase().trim();
           const normCompany = res.companyName.toLowerCase().trim();
 
+          // Data validation step before saving leads
+          const validation = validateLeadRecord(
+            {
+              companyName: res.companyName,
+              email: normEmail,
+              country: res.verifiedCountry || res.country,
+              state: res.verifiedState || res.state,
+              city: res.verifiedCity || res.city,
+              address: res.address || "",
+              website: res.website,
+            },
+            {
+              country: search.country,
+              state: search.state,
+              city: search.city,
+            }
+          );
+
+          if (!validation.valid) {
+            console.warn(`Lead rejected (${validation.reason}): ${res.companyName}`);
+            continue;
+          }
+
           // Avoid duplicate emails or companies within this search
           if (!seenEmails.has(normEmail) && !seenCompanies.has(normCompany)) {
             seenEmails.add(normEmail);
             seenCompanies.add(normCompany);
 
+            // Store city, state, country strictly from verified company details
+            // NEVER use search query as fallback for company location
+            const leadCountry = res.verifiedCountry || res.country || "";
+            const leadState = res.verifiedState || res.state || "";
+            const leadCity = res.verifiedCity || res.city || "";
+
             const leadObj = {
               companyName: res.companyName,
               email: normEmail,
-              country: res.verifiedCountry || res.country,
-              state: res.verifiedState || res.state || search.state || "",
-              city: res.verifiedCity || res.city || search.city || "",
-              verifiedCountry: res.verifiedCountry || res.country,
-              verifiedState: res.verifiedState || res.state || search.state || "",
-              verifiedCity: res.verifiedCity || res.city || search.city || "",
+              country: leadCountry,
+              state: leadState,
+              city: leadCity,
+              verifiedCountry: leadCountry,
+              verifiedState: leadState,
+              verifiedCity: leadCity,
               industry: res.industry || (search.industries && search.industries[0]) || "",
               website: res.website,
               address: res.address || "",

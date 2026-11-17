@@ -403,21 +403,27 @@ const LeadFinder = () => {
         ? meta.industries[0]
         : "Manufacturing";
 
-    // Deduplicate emails
+    // Deduplicate emails and validate
     const seenEmails = new Set();
     const rows = [];
 
     sourceResults.forEach((lead) => {
       const email = (lead.email || "").toLowerCase().trim();
       if (!email || seenEmails.has(email)) return;
+      if (!lead.companyName) return;
       seenEmails.add(email);
+
+      // Store city, state, country separately without fallback to search filters
+      const verifiedCountry = lead.verifiedCountry || lead.country || "Location not verified";
+      const verifiedState = lead.verifiedState || lead.state || "";
+      const verifiedCity = lead.verifiedCity || lead.city || "";
 
       rows.push({
         "Company Name": lead.companyName || "",
         "Email": email,
-        "Country": lead.verifiedCountry || lead.country || countryName,
-        "State": lead.verifiedState || lead.state || stateName,
-        "City": lead.verifiedCity || lead.city || cityName,
+        "Country": verifiedCountry,
+        "State": verifiedState,
+        "City": verifiedCity,
         "Industry": lead.industry || industryName,
         "Website": lead.website || "",
       });
@@ -470,14 +476,20 @@ const LeadFinder = () => {
     sourceResults.forEach((lead) => {
       const email = (lead.email || "").toLowerCase().trim();
       if (!email || seenEmails.has(email)) return;
+      if (!lead.companyName) return;
       seenEmails.add(email);
+
+      // Store city, state, country separately without fallback to search filters
+      const verifiedCountry = lead.verifiedCountry || lead.country || "Location not verified";
+      const verifiedState = lead.verifiedState || lead.state || "";
+      const verifiedCity = lead.verifiedCity || lead.city || "";
 
       rows.push({
         "Company Name": lead.companyName || "",
         "Email": email,
-        "Country": lead.verifiedCountry || lead.country || countryName,
-        "State": lead.verifiedState || lead.state || stateName,
-        "City": lead.verifiedCity || lead.city || cityName,
+        "Country": verifiedCountry,
+        "State": verifiedState,
+        "City": verifiedCity,
         "Industry": lead.industry || industryName,
         "Website": lead.website || "",
       });
@@ -1265,13 +1277,13 @@ const LeadFinder = () => {
                 <tbody className="divide-y divide-slate-800/60">
                   {displayResults.map((lead, idx) => {
                     const rowKey = `lead-${idx}`;
-                    const locLabel = [
+                    const locParts = [
                       lead.verifiedCity || lead.city,
                       lead.verifiedState || lead.state,
                       lead.verifiedCountry || lead.country,
-                    ]
-                      .filter(Boolean)
-                      .join(", ");
+                    ].filter(Boolean);
+                    const locLabel = locParts.length > 0 ? locParts.join(", ") : "Location not verified";
+                    const isLocVerified = locParts.length > 0;
 
                     return (
                       <tr
@@ -1335,10 +1347,21 @@ const LeadFinder = () => {
 
                         {/* Verified Location */}
                         <td className="py-4 px-6">
-                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium">
-                            <MapPin size={12} className="shrink-0 text-emerald-400" />
+                          <div
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-medium ${
+                              isLocVerified
+                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                                : "bg-slate-800/60 border-slate-700/50 text-slate-400"
+                            }`}
+                          >
+                            <MapPin
+                              size={12}
+                              className={`shrink-0 ${
+                                isLocVerified ? "text-emerald-400" : "text-slate-500"
+                              }`}
+                            />
                             <span className="truncate max-w-[200px]" title={locLabel}>
-                              {locLabel || "Verified"}
+                              {locLabel}
                             </span>
                           </div>
                         </td>
